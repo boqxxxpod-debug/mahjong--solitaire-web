@@ -27,8 +27,8 @@ export class Game {
     this.scene.add(new THREE.AmbientLight(0xb8d9d1, 1.7));
     const sun = new THREE.DirectionalLight(0xfff2cf, 3.2); sun.position.set(-7, 12, 8); sun.castShadow = true; this.scene.add(sun);
     this.board = new BoardManager(this.scene);
-    if (this.board.tiles.length !== 32 || this.board.tiles.some((tile) => !this.scene.children.includes(tile.mesh))) {
-      throw new Error(`Tile mesh initialization failed (${this.board.tiles.length}/32)`);
+    if (this.board.tiles.length !== 72 || this.board.tiles.some((tile) => !this.scene.children.includes(tile.mesh))) {
+      throw new Error(`Tile mesh initialization failed (${this.board.tiles.length}/72)`);
     }
     const ui = new UIManager();
     const matches = new MatchManager(this.board, ui);
