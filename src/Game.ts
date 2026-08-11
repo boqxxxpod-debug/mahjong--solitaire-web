@@ -28,8 +28,14 @@ export class Game {
   private resize(): void {
     const width = window.innerWidth, height = window.innerHeight;
     this.camera.aspect = width / height;
-    // Pull back on portrait screens so the full horizontal row remains visible.
-    this.camera.position.set(0, width < height ? 38 : 14, width < height ? 44 : 15);
+    if (width < height) {
+      // Fit the 20-unit-wide row with a small margin, even on narrow phones.
+      const horizontalHalfFov = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) * this.camera.aspect;
+      const distance = 11 / horizontalHalfFov;
+      this.camera.position.set(0, 38, 44).setLength(distance);
+    } else {
+      this.camera.position.set(0, 14, 15);
+    }
     this.camera.lookAt(0, 0, 0); this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height, false);
   }
