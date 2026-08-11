@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { BoardGeometry } from './BoardGeometry';
 import { Tile } from './Tile';
+import { hasAvailablePair, isFreeTile, TileState } from './GameRules';
 
 export class BoardManager {
   readonly tiles: Tile[];
@@ -13,17 +14,23 @@ export class BoardManager {
 
   get activeTiles(): Tile[] { return this.tiles.filter((tile) => !tile.removed); }
 
+  private states(): TileState[] {
+    return this.tiles.map((tile) => ({ id: tile.id, type: tile.type, ...tile.logical, removed: tile.removed }));
+  }
+
   isFree(tile: Tile): boolean {
-    if (tile.removed) return false;
-    const others = this.activeTiles.filter((other) => other !== tile);
-    const covered = others.some((other) => other.logical.layer > tile.logical.layer &&
-      Math.abs(other.logical.gridX - tile.logical.gridX) < 2 && Math.abs(other.logical.gridY - tile.logical.gridY) < 2);
-    if (covered) return false;
-    const sameLayer = others.filter((other) => other.logical.layer === tile.logical.layer && Math.abs(other.logical.gridY - tile.logical.gridY) < 2);
-    const leftBlocked = sameLayer.some((other) => other.logical.gridX === tile.logical.gridX - 2);
-    const rightBlocked = sameLayer.some((other) => other.logical.gridX === tile.logical.gridX + 2);
-    return !leftBlocked || !rightBlocked;
+    return isFreeTile({ id: tile.id, type: tile.type, ...tile.logical, removed: tile.removed }, this.states());
   }
 
   remove(tile: Tile): void { tile.removed = true; tile.mesh.visible = false; }
+
+  hasAvailablePair(): boolean { return hasAvailablePair(this.states()); }
+
+  reset(): void {
+    this.tiles.forEach((tile) => {
+      tile.removed = false;
+      tile.mesh.visible = true;
+      tile.setSelected(false);
+    });
+  }
 }

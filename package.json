@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "tsc && vite build",
+    "test": "rm -rf .test-dist && tsc src/GameRules.ts --outDir .test-dist --target ES2022 --module ES2022 --moduleResolution bundler --skipLibCheck && node --test tests/gameRules.test.mjs && rm -rf .test-dist",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
