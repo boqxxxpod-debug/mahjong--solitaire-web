@@ -8,16 +8,27 @@ export class Tile {
   removed = false;
   selected = false;
 
-  constructor(readonly id: number, readonly type: string, readonly logical: TilePosition, geometry: BoardGeometry) {
-    const materials = geometry.materials(type).map((material) => {
-      const clone = material.clone();
-      if (clone instanceof THREE.MeshStandardMaterial) clone.userData.baseColor = clone.color.getHex();
-      return clone;
-    });
+  private feedbackTimer?: number;
+  constructor(readonly id: number, public type: string, readonly logical: TilePosition, private readonly geometry: BoardGeometry) {
+    const materials = this.createMaterials(type);
     this.mesh = new THREE.Mesh(geometry.geometry, materials);
     this.mesh.position.set(logical.x * TILE_WIDTH * 0.5, logical.z * TILE_HEIGHT, logical.y * TILE_DEPTH * 0.5);
     this.mesh.castShadow = true; this.mesh.receiveShadow = true;
     this.mesh.userData.tile = this;
+  }
+
+  private createMaterials(type: string): THREE.Material[] {
+    return this.geometry.materials(type).map((material) => {
+      const clone = material.clone();
+      if (clone instanceof THREE.MeshStandardMaterial) clone.userData.baseColor = clone.color.getHex();
+      return clone;
+    });
+  }
+
+  setType(type: string): void {
+    (this.mesh.material as THREE.Material[]).forEach((material) => material.dispose());
+    this.type = type;
+    this.mesh.material = this.createMaterials(type);
   }
 
   setSelected(selected: boolean): void {
@@ -34,6 +45,13 @@ export class Tile {
       const baseColor = material.userData.baseColor as number;
       material.color.setHex(baseColor).multiplyScalar(free ? 1 : 0.58);
     });
+  }
+
+  flash(kind: 'hint' | 'blocked'): void {
+    window.clearTimeout(this.feedbackTimer);
+    const color = kind === 'hint' ? 0xf4d784 : 0xe35d52;
+    this.materials().forEach((material) => { material.emissive.setHex(color); material.emissiveIntensity = 0.9; });
+    this.feedbackTimer = window.setTimeout(() => this.setSelected(this.selected), kind === 'hint' ? 2200 : 260);
   }
 
   private materials(): THREE.MeshStandardMaterial[] {
