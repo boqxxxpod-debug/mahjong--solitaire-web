@@ -1,14 +1,20 @@
 import * as THREE from 'three';
 import { BoardGeometry } from './BoardGeometry';
 import { Tile } from './Tile';
-import { getAvailablePairs, hasAvailablePair, isFreeTile, shuffleActiveTypes, TileState } from './GameRules';
+import { getAvailablePairs, hasAvailablePair, isFreeTile, resetTiles, shuffleActiveTypes, TileState } from './GameRules';
 import { createSolvableLayout } from './BoardLayout';
 
 export class BoardManager {
   readonly tiles: Tile[];
+  private readonly initialFaces: readonly string[];
   constructor(scene: THREE.Scene) {
     const geometry = new BoardGeometry();
-    this.tiles = createSolvableLayout().map(({ face, ...position }, index) => new Tile(index, face, position, geometry));
+    const seed = new URLSearchParams(location.search).get('seed');
+    let state = seed === null ? Math.floor(Math.random() * 0xffffffff) : this.hashSeed(seed);
+    const random = () => ((state = (state * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+    const layout = createSolvableLayout(random);
+    this.initialFaces = layout.map((tile) => tile.face);
+    this.tiles = layout.map(({ face, ...position }, index) => new Tile(index, face, position, geometry));
     this.tiles.forEach((tile) => scene.add(tile.mesh));
     this.refreshFreeTiles();
   }
@@ -44,10 +50,11 @@ export class BoardManager {
   }
 
   reset(): void {
-    const layout = createSolvableLayout();
+    const states = this.states();
+    resetTiles(states, this.initialFaces);
     this.tiles.forEach((tile, index) => {
-      tile.setType(layout[index].face);
-      tile.removed = false;
+      tile.setType(states[index].type);
+      tile.removed = states[index].removed;
       tile.mesh.visible = true;
       tile.setSelected(false);
     });
@@ -62,5 +69,11 @@ export class BoardManager {
 
   private refreshFreeTiles(): void {
     this.tiles.forEach((tile) => tile.setFree(this.isFree(tile)));
+  }
+
+  private hashSeed(value: string): number {
+    let hash = 2166136261;
+    for (const character of value) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
+    return hash >>> 0;
   }
 }

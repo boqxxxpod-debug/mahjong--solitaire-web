@@ -43,6 +43,12 @@ export function removePair(first: TileState, second: TileState, tiles: readonly 
   return true;
 }
 
+/** Restores the logical deal used by RESTART without changing board coordinates. */
+export function resetTiles(tiles: TileState[], initialTypes: readonly string[]): void {
+  if (tiles.length !== initialTypes.length) throw new Error('Initial deal does not match the board');
+  tiles.forEach((tile, index) => { tile.type = initialTypes[index]; tile.removed = false; });
+}
+
 function shuffled<T>(values: readonly T[], random: RandomSource): T[] {
   const result = [...values];
   for (let index = result.length - 1; index > 0; index--) {
@@ -52,9 +58,9 @@ function shuffled<T>(values: readonly T[], random: RandomSource): T[] {
   return result;
 }
 
-/** Finds a legal geometric removal order, then deals identical faces onto each pair. */
-export function generateSolvableTypes(positions: readonly TilePosition[], faces: readonly string[], random: RandomSource = Math.random): string[] {
-  if (positions.length % 2 || faces.length !== positions.length / 2) throw new Error('A face is required for every tile pair');
+/** Finds a legal geometric removal order for a board shape. */
+export function findSolvableRemovalOrder(positions: readonly TilePosition[], random: RandomSource = Math.random): Array<readonly [number, number]> {
+  if (positions.length % 2) throw new Error('Board requires an even number of tiles');
   const states: TileState[] = positions.map((position, id) => ({ id, type: '', ...position, removed: false }));
   const order: Array<readonly [number, number]> = [];
   const solve = (): boolean => {
@@ -70,6 +76,13 @@ export function generateSolvableTypes(positions: readonly TilePosition[], faces:
     return false;
   };
   if (!solve()) throw new Error('Board geometry has no legal removal sequence');
+  return order;
+}
+
+/** Finds a legal geometric removal order, then deals identical faces onto each pair. */
+export function generateSolvableTypes(positions: readonly TilePosition[], faces: readonly string[], random: RandomSource = Math.random): string[] {
+  if (positions.length % 2 || faces.length !== positions.length / 2) throw new Error('A face is required for every tile pair');
+  const order = findSolvableRemovalOrder(positions, random);
   const result = Array<string>(positions.length);
   shuffled(faces, random).forEach((face, index) => {
     const [first, second] = order[index]; result[first] = result[second] = face;
