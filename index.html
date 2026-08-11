@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#071a24" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <title>Shanghai 3D Diorama</title>
+  </head>
+  <body>
+    <main id="app" aria-label="上海3Dゲーム">
+      <header class="hud">
+        <div>
+          <p class="eyebrow">MAHJONG SOLITAIRE</p>
+          <h1>上海 <span>3D DIORAMA</span></h1>
+        </div>
+        <div class="counter"><b id="remaining">8</b><small> TILES</small></div>
+      </header>
+      <div id="message" role="status" aria-live="polite">同じ牌を2枚選んでください</div>
+      <div id="clear" class="clear" hidden aria-hidden="true"><span>CLEAR</span><small>盤面をすべて片付けました</small></div>
+      <canvas id="game-canvas" aria-label="8枚の3D麻雀牌"></canvas>
+      <footer>FREE TILE <i></i> 上に牌がなく、左右どちらかが空いている牌</footer>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
