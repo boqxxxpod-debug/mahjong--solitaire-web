@@ -1,16 +1,17 @@
-export interface TileLayout { x: number; y: number; z: number; face: string; }
+import { generateSolvableTypes, RandomSource, TilePosition } from './GameRules.js';
 
-const row = (y: number, z: number, faces: readonly string[]): TileLayout[] =>
-  faces.map((face, index) => ({ x: index * 2 - (faces.length - 1), y, z, face }));
+export interface TileLayout extends TilePosition { face: string; }
+const positions = (y: number, z: number, count: number): TilePosition[] =>
+  Array.from({ length: count }, (_, index) => ({ x: index * 2 - (count - 1), y, z }));
 
-// A compact, deliberately solvable layout. Each row can be removed symmetrically
-// from its free ends once the layer above it has been cleared.
-export const COMPACT_LAYOUT: readonly TileLayout[] = [
-  ...row(-3, 0, ['east', 'south', 'west', 'west', 'south', 'east']),
-  ...row(-1, 0, ['north', 'plum', 'orchid', 'orchid', 'plum', 'north']),
-  ...row(1, 0, ['bamboo', 'circle', 'character', 'character', 'circle', 'bamboo']),
-  ...row(-2, 1, ['green', 'white', 'white', 'green']),
-  ...row(0, 1, ['one', 'two', 'two', 'one']),
-  ...row(2, 1, ['three', 'four', 'four', 'three']),
-  ...row(0, 2, ['red', 'red']),
+export const COMPACT_POSITIONS: readonly TilePosition[] = [
+  ...positions(-3, 0, 6), ...positions(-1, 0, 6), ...positions(1, 0, 6),
+  ...positions(-2, 1, 4), ...positions(0, 1, 4), ...positions(2, 1, 4), ...positions(0, 2, 2),
 ];
+export const TILE_FACES = ['east', 'south', 'west', 'north', 'plum', 'orchid', 'bamboo', 'circle', 'character', 'green', 'white', 'one', 'two', 'three', 'four', 'red'] as const;
+export function createSolvableLayout(random: RandomSource = Math.random): TileLayout[] {
+  const faces = generateSolvableTypes(COMPACT_POSITIONS, TILE_FACES, random);
+  return COMPACT_POSITIONS.map((position, index) => ({ ...position, face: faces[index] }));
+}
+// Stable fixture kept for rules tests and consumers that need a deterministic board.
+export const COMPACT_LAYOUT: readonly TileLayout[] = createSolvableLayout(() => 0.5);
