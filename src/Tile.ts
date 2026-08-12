@@ -1,5 +1,11 @@
 import * as THREE from 'three';
-import { BoardGeometry, TILE_DEPTH, TILE_HEIGHT, TILE_WIDTH } from './BoardGeometry';
+import {
+  BoardGeometry,
+  TILE_LAYER_DEPTH_OFFSET,
+  TILE_LAYER_HEIGHT,
+  TILE_ROW_STRIDE,
+  TILE_WIDTH,
+} from './BoardGeometry';
 
 export interface TilePosition { x: number; y: number; z: number; }
 
@@ -20,7 +26,11 @@ export class Tile {
     this.displayedFaceDown = faceDown;
     const materials = this.createMaterials(type);
     this.mesh = new THREE.Mesh(geometry.geometry, materials);
-    this.mesh.position.set(logical.x * TILE_WIDTH * 0.5, logical.z * TILE_HEIGHT, logical.y * TILE_DEPTH * 0.5);
+    this.mesh.position.set(
+      logical.x * TILE_WIDTH * 0.5,
+      logical.z * TILE_LAYER_HEIGHT,
+      logical.y * TILE_ROW_STRIDE + logical.z * TILE_LAYER_DEPTH_OFFSET,
+    );
     this.mesh.castShadow = true; this.mesh.receiveShadow = true;
     this.mesh.userData.tile = this;
   }
@@ -78,7 +88,7 @@ export class Tile {
 
   setSelected(selected: boolean): void {
     this.selected = selected;
-    this.mesh.position.y = this.logical.z * TILE_HEIGHT + (selected ? 0.32 : 0);
+    this.mesh.position.y = this.logical.z * TILE_LAYER_HEIGHT + (selected ? 0.32 : 0);
     this.materials().forEach((material) => {
       material.emissive.setHex(selected ? 0x2b8f77 : 0x000000);
       material.emissiveIntensity = selected ? 0.5 : 0;

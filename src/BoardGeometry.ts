@@ -4,6 +4,16 @@ import { TileFace } from './TileFace';
 export const TILE_WIDTH = 2.5;
 export const TILE_HEIGHT = 0.72;
 export const TILE_DEPTH = 3.2;
+// Logical rows used to sit edge-to-edge. On a portrait display that caused the
+// projected front row to cover most of the face of the row behind it. Width is
+// the limiting dimension on phones, so spending more of the available height
+// here preserves the large tile faces while making the rear rows readable.
+export const TILE_ROW_STRIDE = TILE_DEPTH * 0.68;
+export const TILE_LAYER_HEIGHT = TILE_HEIGHT * 1.14;
+// Lean each successive storey slightly towards the camera. This keeps the
+// stack's diorama silhouette but prevents its raised face from landing exactly
+// on top of the rear face below it in the camera projection.
+export const TILE_LAYER_DEPTH_OFFSET = TILE_DEPTH * 0.09;
 
 export class BoardGeometry {
   readonly geometry = new THREE.BoxGeometry(TILE_WIDTH, TILE_HEIGHT, TILE_DEPTH, 2, 1, 2);
