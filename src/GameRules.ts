@@ -15,6 +15,18 @@ export type AvailableAction<T = TileState> =
   | { kind: 'pair'; tiles: readonly [T, T] }
   | { kind: 'reveal'; tile: T };
 
+export type SearchStatus = 'CLEAR' | 'PROGRESS_POSSIBLE' | 'DEAD_END' | 'UNSOLVABLE';
+export interface SearchResult {
+  status: SearchStatus;
+  solvable: boolean;
+  canRemovePair: boolean;
+  visitedStates: number;
+  cycleStates: number;
+  maxDepth: number;
+  removalPairs: number;
+  revealMoves: number;
+}
+
 export function isFreeTile(tile: TileState, tiles: readonly TileState[]): boolean {
   if (tile.removed) return false;
   const active = tiles.filter((other) => !other.removed && other.id !== tile.id);
@@ -61,6 +73,52 @@ export function hasAvailableAction(tiles: readonly TileState[]): boolean {
 }
 export function isClear(tiles: readonly TileState[]): boolean { return tiles.every((tile) => tile.removed); }
 export function isStuck(tiles: readonly TileState[]): boolean { return !isClear(tiles) && !hasAvailableAction(tiles); }
+
+/**
+ * Exhaustively explores the actual one-revealed-hidden-tile rules.  The
+ * canonical key contains the removed set and the currently revealed original
+ * hidden tile, so reveal A -> B -> A loops terminate rather than masquerading
+ * as progress.
+ */
+export function analyzeBoard(initial: readonly TileState[], nodeLimit = 1_000_000): SearchResult {
+  const tiles = initial.map((tile) => ({ ...tile }));
+  const initiallyActive = tiles.filter((tile) => !tile.removed).length;
+  const originalHidden = new Set(tiles.filter((tile) => tile.originallyFaceDown ?? tile.faceDown).map((tile) => tile.id));
+  let initialRevealed = -1;
+  for (const tile of tiles) if (originalHidden.has(tile.id) && tile.faceDown === false) initialRevealed = tile.id;
+  const visited = new Set<string>();
+  let cycles = 0, maxDepth = 0, bestRemaining = initiallyActive, solutionPairs = 0, solutionReveals = 0;
+
+  const visit = (removed: Set<number>, revealed: number, depth: number, pairs: number, reveals: number): boolean => {
+    if (visited.size >= nodeLimit) return false;
+    const key = `${[...removed].sort((a, b) => a - b).join(',')}|${revealed}`;
+    if (visited.has(key)) { cycles++; return false; }
+    visited.add(key); maxDepth = Math.max(maxDepth, depth);
+    const state = tiles.map((tile) => ({ ...tile, removed: removed.has(tile.id), faceDown: originalHidden.has(tile.id) && tile.id !== revealed }));
+    const remaining = state.length - removed.size;
+    bestRemaining = Math.min(bestRemaining, remaining);
+    if (!remaining) { solutionPairs = pairs; solutionReveals = reveals; return true; }
+
+    for (const [first, second] of getAvailablePairs(state)) {
+      const next = new Set(removed); next.add(first.id); next.add(second.id);
+      if (visit(next, revealed === first.id || revealed === second.id ? -1 : revealed, depth + 1, pairs + 1, reveals)) return true;
+    }
+    // Reveals are legal even when they do not immediately make a pair.
+    for (const tile of state) if (tile.faceDown && isFreeTile(tile, state)) {
+      if (visit(removed, tile.id, depth + 1, pairs, reveals + 1)) return true;
+    }
+    return false;
+  };
+
+  const removed = new Set(tiles.filter((tile) => tile.removed).map((tile) => tile.id));
+  const solvable = visit(removed, initialRevealed, 0, 0, 0);
+  const canRemovePair = bestRemaining < initiallyActive;
+  return {
+    status: initiallyActive === 0 ? 'CLEAR' : solvable ? 'PROGRESS_POSSIBLE' : canRemovePair ? 'UNSOLVABLE' : 'DEAD_END',
+    solvable, canRemovePair, visitedStates: visited.size, cycleStates: cycles, maxDepth,
+    removalPairs: solutionPairs, revealMoves: solutionReveals,
+  };
+}
 
 /**
  * Explore legal reveals until a removable pair is reached. The normalized

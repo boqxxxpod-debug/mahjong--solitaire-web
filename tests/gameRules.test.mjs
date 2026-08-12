@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createFaceDownFlags, findSolvableRemovalOrder, generateSolvableTypes, getAvailableActions, getAvailablePairs, hasAvailableAction, hasAvailablePair, isClear, isFreeTile, isStuck, isTileUncovered, removePair, resetTiles, shuffleActiveTypes } from '../.test-dist/GameRules.js';
-import { COMPACT_LAYOUT, COMPACT_POSITIONS, TILE_PAIR_FACES, DIFFICULTIES, createSolvableLayout } from '../.test-dist/BoardLayout.js';
+import { analyzeBoard, createFaceDownFlags, findSolvableRemovalOrder, generateSolvableTypes, getAvailableActions, getAvailablePairs, hasAvailableAction, hasAvailablePair, isClear, isFreeTile, isStuck, isTileUncovered, removePair, resetTiles, shuffleActiveTypes } from '../.test-dist/GameRules.js';
+import { COMPACT_LAYOUT, COMPACT_POSITIONS, TILE_PAIR_FACES, DIFFICULTIES, createSolvableDeal, createSolvableLayout } from '../.test-dist/BoardLayout.js';
 
 const row = (types) => types.map((type, id) => ({ id, type, x: id * 2, y: 0, z: 0, removed: false }));
 
@@ -80,6 +80,41 @@ test('revealing another tile turns the previously revealed hidden tile over in v
   tiles[0].originallyFaceDown = true; // currently revealed
   tiles[3].faceDown = tiles[3].originallyFaceDown = true;
   assert.equal(getAvailableActions(tiles).length, 0, 'the two hidden-origin tiles are never face-up together');
+});
+
+test('state search classifies legal but permanently unproductive reveals as DEAD_END', () => {
+  const tiles = row(['a', 'x', 'y', 'b']);
+  for (const tile of [tiles[0], tiles[3]]) tile.faceDown = tile.originallyFaceDown = true;
+  const result = analyzeBoard(tiles);
+  assert.equal(result.status, 'DEAD_END');
+  assert.equal(result.canRemovePair, false);
+  assert.ok(result.cycleStates > 0, 'canonical visited states stop reveal A/B/A loops');
+});
+
+test('state search sees progress after one or multiple reveals and finds a clear route', () => {
+  const oneReveal = row(['a', 'x', 'y', 'a']);
+  oneReveal[0].faceDown = oneReveal[0].originallyFaceDown = true;
+  assert.equal(analyzeBoard(oneReveal).canRemovePair, true);
+
+  // Removing the visible outer pair makes the hidden inner match free.
+  const multipleSteps = row(['a', 'b', 'b', 'a']);
+  multipleSteps[1].faceDown = multipleSteps[1].originallyFaceDown = true;
+  const result = analyzeBoard(multipleSteps);
+  assert.equal(result.status, 'PROGRESS_POSSIBLE');
+  assert.equal(result.solvable, true);
+  assert.equal(result.removalPairs, 2);
+});
+
+test('certified hidden deals retain a full solution under the one-reveal rule', () => {
+  for (const difficulty of ['easy', 'normal', 'hard']) {
+    let state = 73;
+    const random = () => ((state = (state * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+    const deal = createSolvableDeal(difficulty, random);
+    const tiles = deal.layout.map(({ face: type, ...position }, id) => ({
+      id, type, ...position, removed: false, faceDown: deal.faceDown[id], originallyFaceDown: deal.faceDown[id],
+    }));
+    assert.equal(analyzeBoard(tiles).solvable, true, `${difficulty} hidden deal must be solvable`);
+  }
 });
 
 test('clear and stuck remain distinct across every difficulty rule set', () => {
