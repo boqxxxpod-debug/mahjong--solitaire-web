@@ -5,3 +5,5 @@ dist/
 
 # Local browser-test artifacts
 screenshots/
+test-results/
+playwright-report/

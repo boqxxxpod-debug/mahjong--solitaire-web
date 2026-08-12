@@ -7,13 +7,17 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc && vite build",
     "test": "rm -rf .test-dist && tsc src/GameRules.ts src/BoardLayout.ts --outDir .test-dist --target ES2022 --module ES2022 --moduleResolution bundler --skipLibCheck && node --test tests/gameRules.test.mjs && rm -rf .test-dist",
+    "test:e2e": "playwright test",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
     "three": "0.162.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@types/pngjs": "^6.0.5",
     "@types/three": "0.162.0",
+    "pngjs": "^7.0.0",
     "typescript": "^5.9.2",
     "vite": "^7.1.1"
   }

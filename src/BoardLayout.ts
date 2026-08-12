@@ -35,13 +35,37 @@ export const DIFFICULTIES: Record<Difficulty, DifficultyConfig> = {
 
 export const TILE_FACES = ['east', 'south', 'west', 'north', 'plum', 'orchid', 'bamboo', 'circle', 'character', 'green', 'white', 'one', 'two', 'three', 'four', 'red', 'dragon', 'season'] as const;
 
+function hasUniqueValidPositions(positions: readonly TilePosition[]): boolean {
+  const keys = new Set<string>();
+  return positions.every(({ x, y, z }) => {
+    const key = `${x},${y},${z}`;
+    if (![x, y, z].every(Number.isFinite) || keys.has(key)) return false;
+    keys.add(key);
+    return true;
+  });
+}
+
 function pairFaces(pairCount: number): string[] {
   return Array.from({ length: pairCount }, (_, index) => TILE_FACES[index % TILE_FACES.length]);
 }
 
 export function createSolvableLayout(difficulty: Difficulty = 'normal', random: RandomSource = Math.random): TileLayout[] {
   const positions = DIFFICULTIES[difficulty].positions;
-  const faces = generateSolvableTypes(positions, pairFaces(positions.length / 2), random);
+  if (!positions.length || positions.length % 2 || !hasUniqueValidPositions(positions)) {
+    throw new Error(`${difficulty} board has invalid or duplicate positions`);
+  }
+
+  // A deal failure must never turn into an empty board. Try the seeded stream
+  // first, then use a known-safe deterministic deal as the final fallback.
+  let faces: string[] | undefined;
+  try {
+    faces = generateSolvableTypes(positions, pairFaces(positions.length / 2), random);
+  } catch {
+    faces = generateSolvableTypes(positions, pairFaces(positions.length / 2), () => 0.5);
+  }
+  if (faces.length !== positions.length || faces.some((face) => !face)) {
+    throw new Error(`${difficulty} deal did not assign every board position`);
+  }
   return positions.map((position, index) => ({ ...position, face: faces[index] }));
 }
 
