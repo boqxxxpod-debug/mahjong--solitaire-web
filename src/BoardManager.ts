@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { BoardGeometry } from './BoardGeometry';
 import { Tile } from './Tile';
-import { createFaceDownFlags, getAvailablePairs, hasAvailableAction, isFreeTile, shuffleActiveTypes, TileState } from './GameRules';
+import { createFaceDownFlags, getAvailablePairs, hasAvailableAction, isFreeTile, isTileUncovered, shuffleActiveTypes, TileState } from './GameRules';
 import { createSolvableLayout, Difficulty } from './BoardLayout';
 
 export class BoardManager {
@@ -20,7 +20,7 @@ export class BoardManager {
     const layout = createSolvableLayout(difficulty, random);
     const expectedCount = DIFFICULTY_TILE_COUNTS[difficulty];
     if (layout.length !== expectedCount) throw new Error(`${difficulty} layout contains ${layout.length}/${expectedCount} tiles`);
-    const faceDown = createFaceDownFlags(layout.length, difficulty, random);
+    const faceDown = createFaceDownFlags(layout, difficulty, random);
     const nextTiles = layout.map(({ face, ...position }, index) => new Tile(index, face, position, this.geometry, faceDown[index]));
 
     // Build and validate the replacement first. If generation ever fails, the
@@ -37,6 +37,7 @@ export class BoardManager {
     this.assertRenderable(expectedCount);
     this.refreshFreeTiles();
 
+    const states = this.states();
     const diagnostics = {
       difficulty,
       layoutCount: layout.length,
@@ -44,6 +45,8 @@ export class BoardManager {
       boardTileCount: this.tiles.length,
       sceneChildrenCount: this.scene.children.length,
       tileMeshCount: this.tileMeshCount,
+      visibleFaceDownCount: states.filter((tile) => tile.faceDown && isTileUncovered(tile, states)).length,
+      freeFaceDownCount: states.filter((tile) => tile.faceDown && isFreeTile(tile, states)).length,
     };
     console.log(diagnostics);
     (window as Window & { __mahjongBoardDiagnostics?: typeof diagnostics }).__mahjongBoardDiagnostics = diagnostics;

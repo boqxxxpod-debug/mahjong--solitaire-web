@@ -14,14 +14,19 @@ export type RandomSource = () => number;
 export function isFreeTile(tile: TileState, tiles: readonly TileState[]): boolean {
   if (tile.removed) return false;
   const active = tiles.filter((other) => !other.removed && other.id !== tile.id);
-  const covered = active.some((other) => other.z > tile.z &&
-    Math.abs(other.x - tile.x) < 2 && Math.abs(other.y - tile.y) < 2);
-  if (covered) return false;
+  if (!isTileUncovered(tile, tiles)) return false;
 
   const neighbours = active.filter((other) => other.z === tile.z && Math.abs(other.y - tile.y) < 2);
   const leftBlocked = neighbours.some((other) => other.x === tile.x - 2);
   const rightBlocked = neighbours.some((other) => other.x === tile.x + 2);
   return !leftBlocked || !rightBlocked;
+}
+
+/** Whether the tile's top is visible because no active tile overlaps it from above. */
+export function isTileUncovered(tile: TileState, tiles: readonly TileState[]): boolean {
+  if (tile.removed) return false;
+  return !tiles.some((other) => !other.removed && other.id !== tile.id && other.z > tile.z &&
+    Math.abs(other.x - tile.x) < 2 && Math.abs(other.y - tile.y) < 2);
 }
 
 export function getAvailablePairs<T extends TileState>(tiles: readonly T[]): Array<readonly [T, T]> {
@@ -48,11 +53,29 @@ export function removePair(first: TileState, second: TileState, tiles: readonly 
   return true;
 }
 
-/** Marks a difficulty-dependent subset without changing the solvable deal. */
-export function createFaceDownFlags(count: number, difficulty: 'easy' | 'normal' | 'hard', random: RandomSource = Math.random): boolean[] {
+/** Marks visible tiles first, then fills the difficulty-dependent total at random. */
+export function createFaceDownFlags(positions: readonly TilePosition[], difficulty: 'easy' | 'normal' | 'hard', random: RandomSource = Math.random): boolean[] {
+  const count = positions.length;
   const ratio = difficulty === 'easy' ? 0 : difficulty === 'normal' ? 0.125 : 0.225;
   const faceDownCount = Math.round(count * ratio);
-  const chosen = new Set(shuffled(Array.from({ length: count }, (_, index) => index), random).slice(0, faceDownCount));
+  if (!faceDownCount) return Array(count).fill(false);
+
+  const states: TileState[] = positions.map((position, id) => ({ id, type: '', ...position, removed: false }));
+  const requiredVisible = difficulty === 'normal' ? 2 : 4;
+  const free = shuffled(states.filter((tile) => isFreeTile(tile, states)), random);
+  const uncovered = shuffled(states.filter((tile) => isTileUncovered(tile, states)), random);
+  const chosen = new Set<number>();
+
+  // A free hidden tile gives the player an immediately revealable action.
+  if (free[0]) chosen.add(free[0].id);
+  for (const tile of uncovered) {
+    if (chosen.size >= requiredVisible) break;
+    chosen.add(tile.id);
+  }
+  for (const tile of shuffled(states, random)) {
+    if (chosen.size >= faceDownCount) break;
+    chosen.add(tile.id);
+  }
   return Array.from({ length: count }, (_, index) => chosen.has(index));
 }
 
