@@ -65,7 +65,11 @@ test('only one originally face-down tile stays revealed during rapid taps', asyn
     // Keep three independently FREE hidden tiles available so A -> B -> C can
     // be asserted without depending on a particular generated face assignment.
     const freeTiles = game.board.tiles.filter((tile: any) => game.board.isFree(tile));
-    freeTiles.slice(0, 3).forEach((tile: any) => tile.setFaceDown(true));
+    freeTiles.slice(0, 3).forEach((tile: any) => {
+      tile.setFaceDown(true);
+      // These stand in for deal-time hidden tiles in this deterministic setup.
+      Object.defineProperty(tile, 'originallyFaceDown', { value: true });
+    });
     const originalFaceDownIds = game.board.tiles.filter((tile: any) => tile.faceDown).map((tile: any) => tile.id);
     const freeHidden = () => game.board.tiles.filter((tile: any) => tile.faceDown && game.board.isFree(tile));
     const [first] = freeHidden();
@@ -78,6 +82,8 @@ test('only one originally face-down tile stays revealed during rapid taps', asyn
     const thirdDuringFlip = freeHidden().find((tile: any) => tile !== second);
     if (thirdDuringFlip) game.matches.select(thirdDuringFlip);
     const duringFlip = originalFaceDownIds.filter((id: number) => !game.board.tiles[id].faceDown);
+    const displayMatchesStateDuringFlip = game.board.tiles.every((tile: any) =>
+      tile.faceDown === tile.isDisplayingFaceDown || tile.mesh.rotation.y !== 0);
     await new Promise((resolve) => setTimeout(resolve, 300));
     const firstReturnedFaceDown = first.faceDown;
 
@@ -85,17 +91,24 @@ test('only one originally face-down tile stays revealed during rapid taps', asyn
     if (third) game.matches.select(third);
     await new Promise((resolve) => setTimeout(resolve, 300));
     const afterThird = originalFaceDownIds.filter((id: number) => !game.board.tiles[id].faceDown);
+    const ordinaryFaceUpTilesStayedFaceUp = game.board.tiles
+      .filter((tile: any) => !tile.originallyFaceDown && !tile.removed)
+      .every((tile: any) => !tile.faceDown);
     game.matches.restart();
     return {
       firstReturnedFaceDown,
       duringFlip,
+      displayMatchesStateDuringFlip,
       afterThird,
+      ordinaryFaceUpTilesStayedFaceUp,
       restartedHiddenIds: game.board.tiles.filter((tile: any) => tile.faceDown).map((tile: any) => tile.id),
       initialFaceDownIds,
     };
   });
   expect(result.firstReturnedFaceDown).toBe(true);
   expect(result.duringFlip).toHaveLength(1);
+  expect(result.displayMatchesStateDuringFlip).toBe(true);
   expect(result.afterThird).toHaveLength(1);
+  expect(result.ordinaryFaceUpTilesStayedFaceUp).toBe(true);
   expect(result.restartedHiddenIds).toEqual(result.initialFaceDownIds);
 });

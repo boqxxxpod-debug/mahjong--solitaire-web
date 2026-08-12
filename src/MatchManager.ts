@@ -89,13 +89,17 @@ export class MatchManager {
 
   private async revealFaceDown(tile: Tile): Promise<void> {
     this.flipping = true;
-    const previous = this.revealedFaceDownTile;
+    const previousTiles = this.board.activeTiles.filter((candidate) =>
+      candidate !== tile && candidate.originallyFaceDown && !candidate.faceDown);
+
+    // Keep the explicit pointer for normal tracking, while the scan repairs any
+    // stale reference and enforces the invariant across the whole board.
     this.selected?.setSelected(false); this.selected = null;
 
     // Update both logical states before animation starts, so even rapid input can
     // never observe two originally hidden tiles as face-up.
     const animations: Array<Promise<void>> = [];
-    if (previous && previous !== tile && !previous.removed) animations.push(previous.flipTo(true));
+    for (const previous of previousTiles) animations.push(previous.flipTo(true));
     animations.push(tile.flipTo(false));
     this.revealedFaceDownTile = tile;
     this.ui.showMessage('裏向き牌を表にしました');

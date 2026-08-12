@@ -8,11 +8,16 @@ export class Tile {
   removed = false;
   selected = false;
   faceDown: boolean;
+  /** Identifies tiles that belong to the deal's face-down pool. */
+  readonly originallyFaceDown: boolean;
+  private displayedFaceDown: boolean;
 
   private feedbackTimer?: number;
   private flipGeneration = 0;
   constructor(readonly id: number, public type: string, readonly logical: TilePosition, private readonly geometry: BoardGeometry, faceDown = false) {
     this.faceDown = faceDown;
+    this.originallyFaceDown = faceDown;
+    this.displayedFaceDown = faceDown;
     const materials = this.createMaterials(type);
     this.mesh = new THREE.Mesh(geometry.geometry, materials);
     this.mesh.position.set(logical.x * TILE_WIDTH * 0.5, logical.z * TILE_HEIGHT, logical.y * TILE_DEPTH * 0.5);
@@ -41,19 +46,23 @@ export class Tile {
     this.replaceMaterials();
   }
 
+  /** Used by diagnostics/tests to assert that logical and rendered faces agree. */
+  get isDisplayingFaceDown(): boolean { return this.displayedFaceDown; }
+
   flipTo(faceDown: boolean): Promise<void> {
     if (this.faceDown === faceDown) return Promise.resolve();
     const generation = ++this.flipGeneration;
     this.faceDown = faceDown;
+    // Swap immediately with the logical state. The rotation supplies the flip
+    // motion without leaving the material and faceDown flag contradictory.
+    this.replaceMaterials();
     const started = performance.now();
     const duration = 260;
-    let swapped = false;
     return new Promise((resolve) => {
       const animate = (now: number) => {
         if (generation !== this.flipGeneration) { resolve(); return; }
         const progress = Math.min(1, (now - started) / duration);
         this.mesh.rotation.y = Math.sin(progress * Math.PI) * Math.PI / 2;
-        if (!swapped && progress >= 0.5) { swapped = true; this.replaceMaterials(); }
         if (progress < 1) requestAnimationFrame(animate);
         else { this.mesh.rotation.y = 0; resolve(); }
       };
@@ -64,6 +73,7 @@ export class Tile {
   private replaceMaterials(): void {
     (this.mesh.material as THREE.Material[]).forEach((material) => material.dispose());
     this.mesh.material = this.createMaterials(this.type);
+    this.displayedFaceDown = this.faceDown;
   }
 
   setSelected(selected: boolean): void {
