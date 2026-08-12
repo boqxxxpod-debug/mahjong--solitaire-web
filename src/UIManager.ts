@@ -41,7 +41,12 @@ export class UIManager {
     this.resultShuffle.hidden = true;
     this.showResult('CLEAR', `クリアタイム ${this.formatTime(this.elapsed)} ・ ${moves}手`);
   }
-  showNoMoves(): void { this.resultShuffle.hidden = false; this.showResult('手詰まり', '取れるペアがありません。SHUFFLEかRESTARTを選んでください'); }
+  showNoMoves(canShuffle: boolean): void {
+    this.resultShuffle.hidden = !canShuffle;
+    this.showResult('NO MORE MOVES', canShuffle
+      ? 'これ以上取れるペアがありません。SHUFFLEかRESTARTを選んでください'
+      : 'これ以上取れるペアがありません。RESTARTでもう一度遊べます');
+  }
   reset(count: number): void {
     this.stopTimer(); this.elapsed = 0; this.startedAt = performance.now();
     this.timer = window.setInterval(() => this.tick(), 250); this.tick(); this.updateMoves(0);

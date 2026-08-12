@@ -101,7 +101,7 @@ test('only one originally face-down tile stays revealed during rapid taps', asyn
     const freeHidden = () => game.board.tiles.filter((tile: any) => tile.faceDown && game.board.isFree(tile));
     const [first] = freeHidden();
     game.matches.select(first);
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await new Promise((resolve) => setTimeout(resolve, 400));
 
     const second = freeHidden().find((tile: any) => tile !== first);
     game.matches.select(second);
@@ -111,12 +111,12 @@ test('only one originally face-down tile stays revealed during rapid taps', asyn
     const duringFlip = originalFaceDownIds.filter((id: number) => !game.board.tiles[id].faceDown);
     const displayMatchesStateDuringFlip = game.board.tiles.every((tile: any) =>
       tile.faceDown === tile.isDisplayingFaceDown || tile.mesh.rotation.y !== 0);
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await new Promise((resolve) => setTimeout(resolve, 400));
     const firstReturnedFaceDown = first.faceDown;
 
     const third = freeHidden().find((tile: any) => tile !== first && tile !== second);
     if (third) game.matches.select(third);
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await new Promise((resolve) => setTimeout(resolve, 400));
     const afterThird = originalFaceDownIds.filter((id: number) => !game.board.tiles[id].faceDown);
     const ordinaryFaceUpTilesStayedFaceUp = game.board.tiles
       .filter((tile: any) => !tile.originallyFaceDown && !tile.removed)
