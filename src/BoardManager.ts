@@ -1,13 +1,14 @@
 import * as THREE from 'three';
 import { BoardGeometry } from './BoardGeometry';
 import { Tile } from './Tile';
-import { getAvailablePairs, hasAvailablePair, isFreeTile, shuffleActiveTypes, TileState } from './GameRules';
+import { createFaceDownFlags, getAvailablePairs, hasAvailableAction, isFreeTile, shuffleActiveTypes, TileState } from './GameRules';
 import { createSolvableLayout, Difficulty } from './BoardLayout';
 
 export class BoardManager {
   tiles: Tile[] = [];
   private readonly geometry = new BoardGeometry();
   private seedState: number;
+  private initialDeal: Array<{ type: string; faceDown: boolean }> = [];
   constructor(private readonly scene: THREE.Scene, public difficulty: Difficulty = 'normal') {
     const seed = new URLSearchParams(location.search).get('seed');
     this.seedState = seed === null ? Math.floor(Math.random() * 0xffffffff) : this.hashSeed(seed);
@@ -19,7 +20,8 @@ export class BoardManager {
     const layout = createSolvableLayout(difficulty, random);
     const expectedCount = DIFFICULTY_TILE_COUNTS[difficulty];
     if (layout.length !== expectedCount) throw new Error(`${difficulty} layout contains ${layout.length}/${expectedCount} tiles`);
-    const nextTiles = layout.map(({ face, ...position }, index) => new Tile(index, face, position, this.geometry));
+    const faceDown = createFaceDownFlags(layout.length, difficulty, random);
+    const nextTiles = layout.map(({ face, ...position }, index) => new Tile(index, face, position, this.geometry, faceDown[index]));
 
     // Build and validate the replacement first. If generation ever fails, the
     // currently visible board remains intact instead of being replaced by [].
@@ -29,6 +31,7 @@ export class BoardManager {
     });
     this.difficulty = difficulty;
     this.tiles = nextTiles;
+    this.initialDeal = nextTiles.map((tile) => ({ type: tile.type, faceDown: tile.faceDown }));
     this.tiles.forEach((tile) => this.scene.add(tile.mesh));
     if (this.tileMeshCount !== expectedCount) throw new Error(`${difficulty} scene contains ${this.tileMeshCount}/${expectedCount} tile meshes`);
     this.assertRenderable(expectedCount);
@@ -53,7 +56,7 @@ export class BoardManager {
   get activeTiles(): Tile[] { return this.tiles.filter((tile) => !tile.removed); }
 
   private states(): TileState[] {
-    return this.tiles.map((tile) => ({ id: tile.id, type: tile.type, ...tile.logical, removed: tile.removed }));
+    return this.tiles.map((tile) => ({ id: tile.id, type: tile.type, ...tile.logical, removed: tile.removed, faceDown: tile.faceDown }));
   }
 
   isFree(tile: Tile): boolean {
@@ -66,7 +69,7 @@ export class BoardManager {
     this.refreshFreeTiles();
   }
 
-  hasAvailablePair(): boolean { return hasAvailablePair(this.states()); }
+  hasAvailableAction(): boolean { return hasAvailableAction(this.states()); }
 
   getHint(): readonly [Tile, Tile] | null {
     const pair = getAvailablePairs(this.states())[0];
@@ -77,6 +80,15 @@ export class BoardManager {
     const states = this.states();
     shuffleActiveTypes(states);
     states.forEach((state) => { if (!state.removed) this.tiles[state.id].setType(state.type); });
+    this.refreshFreeTiles();
+  }
+
+  restart(): void {
+    this.tiles.forEach((tile, index) => {
+      tile.removed = false; tile.mesh.visible = true; tile.setSelected(false);
+      tile.setFaceDown(this.initialDeal[index].faceDown);
+      tile.setType(this.initialDeal[index].type);
+    });
     this.refreshFreeTiles();
   }
 

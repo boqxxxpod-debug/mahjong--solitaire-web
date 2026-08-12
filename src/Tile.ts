@@ -7,9 +7,11 @@ export class Tile {
   readonly mesh: THREE.Mesh;
   removed = false;
   selected = false;
+  faceDown: boolean;
 
   private feedbackTimer?: number;
-  constructor(readonly id: number, public type: string, readonly logical: TilePosition, private readonly geometry: BoardGeometry) {
+  constructor(readonly id: number, public type: string, readonly logical: TilePosition, private readonly geometry: BoardGeometry, faceDown = false) {
+    this.faceDown = faceDown;
     const materials = this.createMaterials(type);
     this.mesh = new THREE.Mesh(geometry.geometry, materials);
     this.mesh.position.set(logical.x * TILE_WIDTH * 0.5, logical.z * TILE_HEIGHT, logical.y * TILE_DEPTH * 0.5);
@@ -18,7 +20,7 @@ export class Tile {
   }
 
   private createMaterials(type: string): THREE.Material[] {
-    return this.geometry.materials(type).map((material) => {
+    return (this.faceDown ? this.geometry.backMaterials() : this.geometry.materials(type)).map((material) => {
       const clone = material.clone();
       if (clone instanceof THREE.MeshStandardMaterial) clone.userData.baseColor = clone.color.getHex();
       return clone;
@@ -29,6 +31,32 @@ export class Tile {
     (this.mesh.material as THREE.Material[]).forEach((material) => material.dispose());
     this.type = type;
     this.mesh.material = this.createMaterials(type);
+  }
+
+  setFaceDown(faceDown: boolean): void {
+    this.faceDown = faceDown;
+    this.replaceMaterials();
+  }
+
+  reveal(): void {
+    if (!this.faceDown) return;
+    this.faceDown = false;
+    const started = performance.now();
+    const duration = 260;
+    let swapped = false;
+    const animate = (now: number) => {
+      const progress = Math.min(1, (now - started) / duration);
+      this.mesh.rotation.y = Math.sin(progress * Math.PI) * Math.PI / 2;
+      if (!swapped && progress >= 0.5) { swapped = true; this.replaceMaterials(); }
+      if (progress < 1) requestAnimationFrame(animate);
+      else this.mesh.rotation.y = 0;
+    };
+    requestAnimationFrame(animate);
+  }
+
+  private replaceMaterials(): void {
+    (this.mesh.material as THREE.Material[]).forEach((material) => material.dispose());
+    this.mesh.material = this.createMaterials(this.type);
   }
 
   setSelected(selected: boolean): void {
