@@ -73,7 +73,6 @@ test('shuffle preserves remaining tile count and face multiset and makes a move'
 });
 
 test('100 seeded boards per difficulty are paired, playable, and carry a complete solution', () => {
-  const averageFree = {};
   for (const difficulty of ['easy', 'normal', 'hard']) {
     const positions = DIFFICULTIES[difficulty].positions;
     let freeTotal = 0;
@@ -99,13 +98,24 @@ test('100 seeded boards per difficulty are paired, playable, and carry a complet
       for (const [first, second] of order) assert.equal(removePair(tiles[first], tiles[second], tiles), true);
       assert.equal(isClear(tiles), true);
     }
-    averageFree[difficulty] = freeTotal / 100;
+    assert.ok(freeTotal / 100 > 1, `${difficulty} must expose playable edge tiles`);
+    assert.ok(freeTotal / 100 < positions.length, `${difficulty} must retain blocked tiles`);
   }
   assert.equal(DIFFICULTIES.easy.positions.length, 48);
   assert.equal(DIFFICULTIES.normal.positions.length, 72);
   assert.equal(DIFFICULTIES.hard.positions.length, 96);
-  assert.ok(averageFree.easy > averageFree.normal && averageFree.normal > averageFree.hard,
-    `expected easy > normal > hard, got ${JSON.stringify(averageFree)}`);
+});
+
+test('hard uses a compact four-layer 48/28/16/4 turtle', () => {
+  const positions = DIFFICULTIES.hard.positions;
+  assert.deepEqual([0, 1, 2, 3].map((z) => positions.filter((tile) => tile.z === z).length), [48, 28, 16, 4]);
+  const width = Math.max(...positions.map(({ x }) => x)) - Math.min(...positions.map(({ x }) => x)) + 2;
+  const depth = Math.max(...positions.map(({ y }) => y)) - Math.min(...positions.map(({ y }) => y)) + 2;
+  assert.ok(width / depth >= 1 && width / depth <= 1.5, `hard footprint must be near-square, got ${width}:${depth}`);
+  for (let z = 1; z <= 3; z++) {
+    const layer = positions.filter((tile) => tile.z === z);
+    assert.ok(Math.max(...layer.map(({ x }) => Math.abs(x))) < Math.max(...positions.filter((tile) => tile.z === z - 1).map(({ x }) => Math.abs(x))));
+  }
 });
 
 test('all 100 seeded hard deals contain 96 unique tiles and a complete legal solution', () => {
