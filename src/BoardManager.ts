@@ -60,7 +60,10 @@ export class BoardManager {
   get activeTiles(): Tile[] { return this.tiles.filter((tile) => !tile.removed); }
 
   private states(): TileState[] {
-    return this.tiles.map((tile) => ({ id: tile.id, type: tile.type, ...tile.logical, removed: tile.removed, faceDown: tile.faceDown }));
+    return this.tiles.map((tile) => ({
+      id: tile.id, type: tile.type, ...tile.logical, removed: tile.removed,
+      faceDown: tile.faceDown, originallyFaceDown: tile.originallyFaceDown,
+    }));
   }
 
   isFree(tile: Tile): boolean {
