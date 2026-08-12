@@ -27,14 +27,15 @@ export class Game {
     this.scene.add(new THREE.AmbientLight(0xb8d9d1, 1.7));
     const sun = new THREE.DirectionalLight(0xfff2cf, 3.2); sun.position.set(-7, 12, 8); sun.castShadow = true; this.scene.add(sun);
     this.board = new BoardManager(this.scene);
-    if (this.board.tiles.length !== 72 || this.board.tiles.some((tile) => !this.scene.children.includes(tile.mesh))) {
-      throw new Error(`Tile mesh initialization failed (${this.board.tiles.length}/72)`);
+    if (this.board.tiles.length !== 44 || this.board.tiles.some((tile) => !this.scene.children.includes(tile.mesh))) {
+      throw new Error(`Tile mesh initialization failed (${this.board.tiles.length}/44)`);
     }
     const ui = new UIManager();
     const matches = new MatchManager(this.board, ui);
-    (window as Window & { __mahjongGameTest?: { board: BoardManager; matches: MatchManager } }).__mahjongGameTest = {
+    (window as Window & { __mahjongGameTest?: { board: BoardManager; matches: MatchManager; camera: THREE.PerspectiveCamera } }).__mahjongGameTest = {
       board: this.board,
       matches,
+      camera: this.camera,
     };
     new InputController(canvas, this.camera, this.board, matches);
     window.addEventListener('resize', () => this.resize());
@@ -72,7 +73,9 @@ export class Game {
     }
     const verticalFov = THREE.MathUtils.degToRad(this.camera.fov / 2);
     const horizontalFov = Math.atan(Math.tan(verticalFov) * this.camera.aspect);
-    const distance = Math.max(halfWidth / Math.tan(horizontalFov), halfHeight / Math.tan(verticalFov)) * 1.14 + halfDepth;
+    // A small safe edge is enough for touch screens; the old 14% gutter made
+    // the already fitted tiles needlessly small at narrow phone aspect ratios.
+    const distance = Math.max(halfWidth / Math.tan(horizontalFov), halfHeight / Math.tan(verticalFov)) * 1.05 + halfDepth;
     this.camera.position.copy(center).addScaledVector(direction, distance);
     // Keep the fitted board inside the depth range too. This matters on narrow
     // phones where fitting a wide layout can place the camera beyond far=100.
