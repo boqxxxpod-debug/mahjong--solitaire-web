@@ -6,6 +6,7 @@ export interface TileState {
   z: number;
   removed: boolean;
   faceDown?: boolean;
+  originallyFaceDown?: boolean;
 }
 
 export interface TilePosition { x: number; y: number; z: number; }
@@ -42,21 +43,33 @@ export function getAvailablePairs<T extends TileState>(tiles: readonly T[]): Arr
 }
 
 export function hasAvailablePair(tiles: readonly TileState[]): boolean { return getAvailablePairs(tiles).length > 0; }
-/** Returns every action the player can take now, including revealing a free hidden tile. */
+/**
+ * Returns actions which can actually remove a pair under the one-revealed-tile
+ * rule. A reveal is useful only when that exact virtual reveal creates a pair.
+ */
 export function getAvailableActions<T extends TileState>(tiles: readonly T[]): Array<AvailableAction<T>> {
-  return [
-    ...getAvailablePairs(tiles).map((pair): AvailableAction<T> => ({ kind: 'pair', tiles: pair })),
-    ...tiles.filter((tile) => tile.faceDown && isFreeTile(tile, tiles))
-      .map((tile): AvailableAction<T> => ({ kind: 'reveal', tile })),
-  ];
+  const pairs = getAvailablePairs(tiles);
+  if (pairs.length) return pairs.map((pair): AvailableAction<T> => ({ kind: 'pair', tiles: pair }));
+
+  return tiles.filter((tile) => tile.faceDown && isFreeTile(tile, tiles) && revealCreatesPair(tile, tiles))
+    .map((tile): AvailableAction<T> => ({ kind: 'reveal', tile }));
 }
 
-/** A face-down free tile is also a legal action, even when no visible pair exists. */
+/** Whether the current board can progress to removing a pair. */
 export function hasAvailableAction(tiles: readonly TileState[]): boolean {
   return getAvailableActions(tiles).length > 0;
 }
 export function isClear(tiles: readonly TileState[]): boolean { return tiles.every((tile) => tile.removed); }
 export function isStuck(tiles: readonly TileState[]): boolean { return !isClear(tiles) && !hasAvailableAction(tiles); }
+
+function revealCreatesPair(candidate: TileState, tiles: readonly TileState[]): boolean {
+  const virtual = tiles.map((tile) => ({
+    ...tile,
+    // Revealing candidate turns every other originally hidden tile back over.
+    faceDown: tile.id === candidate.id ? false : tile.originallyFaceDown ? true : tile.faceDown,
+  }));
+  return hasAvailablePair(virtual);
+}
 
 export function removePair(first: TileState, second: TileState, tiles: readonly TileState[]): boolean {
   if (first.faceDown || second.faceDown || first.id === second.id || first.type !== second.type || !isFreeTile(first, tiles) || !isFreeTile(second, tiles)) return false;

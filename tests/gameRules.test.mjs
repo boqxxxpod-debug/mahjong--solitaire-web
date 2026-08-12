@@ -29,11 +29,47 @@ test('face-down tiles use the same free rule but never expose a hint or match', 
   assert.equal(isFreeTile(tiles[1], tiles), false, 'a blocked face-down tile cannot be revealed');
   assert.equal(getAvailablePairs(tiles).length, 0, 'hidden faces are excluded from hints');
   assert.equal(removePair(tiles[0], tiles[3], tiles), false, 'a hidden tile cannot be removed');
-  assert.equal(hasAvailableAction(tiles), true, 'revealing a free tile prevents a false dead end');
-  assert.equal(getAvailableActions(tiles)[0].kind, 'reveal', 'hint and dead-end checks share the reveal action');
+  tiles[0].originallyFaceDown = true;
+  assert.equal(hasAvailableAction(tiles), true, 'a reveal which creates a pair is progress');
+  assert.equal(getAvailableActions(tiles)[0].kind, 'reveal', 'hint and dead-end checks share the productive reveal');
   tiles[0].faceDown = false;
   assert.equal(getAvailablePairs(tiles).length, 1, 'a revealed tile behaves like a normal tile');
   assert.equal(getAvailableActions(tiles)[0].kind, 'pair');
+});
+
+test('visible free pair is progress without a reveal', () => {
+  assert.equal(getAvailableActions(row(['a', 'b', 'b', 'a']))[0].kind, 'pair');
+});
+
+test('revealing one hidden free tile is progress only when it matches a visible free tile', () => {
+  const tiles = row(['a', 'x', 'y', 'a']);
+  tiles[0].faceDown = tiles[0].originallyFaceDown = true;
+  assert.deepEqual(getAvailableActions(tiles).map((action) => action.kind), ['reveal']);
+  assert.equal(isStuck(tiles), false);
+});
+
+test('reveal-only cycles with no resulting pair are stuck', () => {
+  const tiles = Array.from({ length: 52 }, (_, id) => ({
+    id, type: `tile-${id}`, x: id * 3, y: 0, z: 0, removed: false,
+    faceDown: id % 2 === 0, originallyFaceDown: id % 2 === 0,
+  }));
+  assert.ok(tiles.filter((tile) => tile.faceDown && isFreeTile(tile, tiles)).length > 1);
+  assert.equal(getAvailableActions(tiles).length, 0);
+  assert.equal(isStuck(tiles), true, '52 tiles cannot progress by endlessly cycling reveals');
+});
+
+test('matching hidden free tiles cannot be removed because only one can be revealed', () => {
+  const tiles = row(['a', 'x', 'y', 'a']);
+  for (const tile of [tiles[0], tiles[3]]) tile.faceDown = tile.originallyFaceDown = true;
+  assert.equal(isStuck(tiles), true);
+  assert.equal(getAvailableActions(tiles).length, 0);
+});
+
+test('revealing another tile turns the previously revealed hidden tile over in virtual evaluation', () => {
+  const tiles = row(['a', 'x', 'y', 'a']);
+  tiles[0].originallyFaceDown = true; // currently revealed
+  tiles[3].faceDown = tiles[3].originallyFaceDown = true;
+  assert.equal(getAvailableActions(tiles).length, 0, 'the two hidden-origin tiles are never face-up together');
 });
 
 test('clear and stuck remain distinct across every difficulty rule set', () => {
