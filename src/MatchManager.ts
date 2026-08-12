@@ -5,6 +5,8 @@ import { DIFFICULTIES, Difficulty } from './BoardLayout';
 
 export class MatchManager {
   private selected: Tile | null = null;
+  private revealedFaceDownTile: Tile | null = null;
+  private flipping = false;
   private moves = 0;
   private hints: number | null = 3;
   private shuffles: number | null = 2;
@@ -17,17 +19,19 @@ export class MatchManager {
   }
 
   select(tile: Tile): void {
+    if (this.flipping) return;
     if (!this.board.isFree(tile)) { tile.flash('blocked'); this.ui.showMessage('この牌はまだ取得できません', true); return; }
     if (tile.faceDown) {
-      this.selected?.setSelected(false); this.selected = null;
-      tile.reveal(); this.ui.showMessage('裏向き牌を表にしました');
+      void this.revealFaceDown(tile);
       return;
     }
     if (tile === this.selected) { tile.setSelected(false); this.selected = null; this.ui.showMessage('同じ牌を2枚選んでください'); return; }
     if (!this.selected) { tile.setSelected(true); this.selected = tile; this.ui.showMessage('同じ絵柄の牌を選んでください'); return; }
     if (this.selected.type === tile.type) {
+      const first = this.selected;
       this.selected.setSelected(false);
       this.board.remove(this.selected); this.board.remove(tile); this.selected = null;
+      if (this.revealedFaceDownTile === first || this.revealedFaceDownTile === tile) this.revealedFaceDownTile = null;
       this.moves++; this.ui.updateMoves(this.moves);
       const count = this.board.activeTiles.length; this.ui.updateRemaining(count);
       if (count === 0) this.ui.showClear(this.moves);
@@ -42,6 +46,7 @@ export class MatchManager {
   restart(): void {
     this.selected?.setSelected(false);
     this.selected = null;
+    this.revealedFaceDownTile = null; this.flipping = false;
     this.board.restart();
     this.moves = 0;
     this.resetLimits();
@@ -52,7 +57,7 @@ export class MatchManager {
     this.board.newDeal(difficulty);
     // Fit and render the completed board before publishing its new count in UI.
     window.dispatchEvent(new Event('resize'));
-    this.selected = null; this.moves = 0; this.resetLimits();
+    this.selected = null; this.revealedFaceDownTile = null; this.flipping = false; this.moves = 0; this.resetLimits();
     this.ui.reset(this.board.activeTiles.length);
   }
 
@@ -80,5 +85,21 @@ export class MatchManager {
     this.ui.updateDifficulty(this.board.difficulty, this.hints, this.shuffles);
     this.ui.hideResult();
     this.ui.showMessage('残り牌の絵柄をシャッフルしました');
+  }
+
+  private async revealFaceDown(tile: Tile): Promise<void> {
+    this.flipping = true;
+    const previous = this.revealedFaceDownTile;
+    this.selected?.setSelected(false); this.selected = null;
+
+    // Update both logical states before animation starts, so even rapid input can
+    // never observe two originally hidden tiles as face-up.
+    const animations: Array<Promise<void>> = [];
+    if (previous && previous !== tile && !previous.removed) animations.push(previous.flipTo(true));
+    animations.push(tile.flipTo(false));
+    this.revealedFaceDownTile = tile;
+    this.ui.showMessage('裏向き牌を表にしました');
+    await Promise.all(animations);
+    this.flipping = false;
   }
 }
