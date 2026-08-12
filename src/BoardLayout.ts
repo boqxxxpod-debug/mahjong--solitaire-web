@@ -1,4 +1,4 @@
-import { generateSolvableTypes, RandomSource, TilePosition } from './GameRules.js';
+import { findSolvableRemovalOrder, generateSolvableTypes, RandomSource, TilePosition } from './GameRules.js';
 
 export type Difficulty = 'easy' | 'normal' | 'hard';
 export interface TileLayout extends TilePosition { face: string; }
@@ -22,9 +22,25 @@ export const NORMAL_POSITIONS: readonly TilePosition[] = [
   ...row(-1, 1, 10), ...row(1, 1, 10), ...row(0, 2, 10), ...row(0, 3, 2),
 ];
 
+const rectangle = (columns: number, rows: number, z: number): TilePosition[] =>
+  Array.from({ length: rows }, (_, rowIndex) =>
+    Array.from({ length: columns }, (_, columnIndex) => ({
+      x: columnIndex * 2 - (columns - 1),
+      y: rowIndex * 2 - (rows - 1),
+      z,
+    }))).flat();
+
+/**
+ * Smartphone-first turtle layout: 48 + 28 + 16 + 4 = 96 tiles.
+ * Each successive rectangle is centred over the one below it, producing a
+ * compact footprint instead of the former rows that were almost twice as
+ * wide as they were deep.
+ */
 export const HARD_POSITIONS: readonly TilePosition[] = [
-  ...row(-1, 0, 20), ...row(1, 0, 20),
-  ...row(-1, 1, 12), ...row(1, 1, 12), ...row(0, 2, 16), ...row(0, 3, 16),
+  ...rectangle(8, 6, 0),
+  ...rectangle(7, 4, 1),
+  ...rectangle(4, 4, 2),
+  ...rectangle(2, 2, 3),
 ];
 
 export const TILE_FACES = ['east', 'south', 'west', 'north', 'plum', 'orchid', 'bamboo', 'circle', 'character', 'green', 'white', 'one', 'two', 'three', 'four', 'red', 'dragon', 'season'] as const;
@@ -34,14 +50,7 @@ export const TILE_FACES = ['east', 'south', 'west', 'north', 'plum', 'orchid', '
  * solution for this four-layer geometry.
  */
 export const HARD_FALLBACK_LAYOUT: readonly TileLayout[] = (() => {
-  const removalPairs = [
-    [0, 95], [1, 80], [19, 81], [18, 82], [20, 94], [21, 93], [39, 83], [38, 84],
-    [64, 92], [2, 91], [22, 85], [65, 90], [3, 89], [23, 86], [66, 88], [40, 79],
-    [4, 78], [17, 87], [16, 67], [37, 68], [36, 69], [41, 77], [5, 70], [42, 76],
-    [6, 71], [43, 75], [7, 72], [44, 74], [8, 73], [45, 63], [9, 62], [35, 52],
-    [24, 61], [34, 53], [25, 60], [33, 54], [26, 59], [32, 55], [27, 58], [31, 56],
-    [28, 51], [15, 50], [14, 49], [13, 48], [12, 47], [11, 57], [29, 46], [10, 30],
-  ] as const;
+  const removalPairs = findSolvableRemovalOrder(HARD_POSITIONS, () => 0.5);
   const faces = Array<string>(HARD_POSITIONS.length);
   removalPairs.forEach(([first, second], index) => {
     faces[first] = faces[second] = TILE_FACES[index % TILE_FACES.length];
