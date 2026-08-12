@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import { BoardGeometry } from './BoardGeometry';
 import { Tile } from './Tile';
-import { createFaceDownFlags, getAvailableActions, hasAvailableAction, isFreeTile, isTileUncovered, shuffleActiveTypes } from './GameRules';
+import { analyzeBoard, getAvailableActions, hasAvailableAction, isFreeTile, isTileUncovered, shuffleActiveTypes } from './GameRules';
 import type { AvailableAction, TileState } from './GameRules';
-import { createSolvableLayout, Difficulty } from './BoardLayout';
+import { createSolvableDeal, Difficulty } from './BoardLayout';
 
 export class BoardManager {
   tiles: Tile[] = [];
@@ -18,10 +18,9 @@ export class BoardManager {
 
   newDeal(difficulty: Difficulty = this.difficulty): void {
     const random = () => ((this.seedState = (this.seedState * 1664525 + 1013904223) >>> 0) / 2 ** 32);
-    const layout = createSolvableLayout(difficulty, random);
+    const { layout, faceDown } = createSolvableDeal(difficulty, random);
     const expectedCount = DIFFICULTY_TILE_COUNTS[difficulty];
     if (layout.length !== expectedCount) throw new Error(`${difficulty} layout contains ${layout.length}/${expectedCount} tiles`);
-    const faceDown = createFaceDownFlags(layout, difficulty, random);
     const nextTiles = layout.map(({ face, ...position }, index) => new Tile(index, face, position, this.geometry, faceDown[index]));
 
     // Build and validate the replacement first. If generation ever fails, the
@@ -77,6 +76,9 @@ export class BoardManager {
   }
 
   hasAvailableAction(): boolean { return hasAvailableAction(this.states()); }
+
+  /** Accurate dead-end check for UI consumers; bounded to protect a frame. */
+  analyzeProgress() { return analyzeBoard(this.states(), 50_000); }
 
   getHint(): AvailableAction<Tile> | null {
     const action = getAvailableActions(this.states())[0];

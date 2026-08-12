@@ -48,8 +48,9 @@ export const TILE_FACES = ['east', 'south', 'west', 'north', 'plum', 'orchid', '
  * The guaranteed Hard deal. The recorded removal pairs are a complete legal
  * solution for this five-layer geometry.
  */
+const HARD_REMOVAL_ORDER = findSolvableRemovalOrder(HARD_POSITIONS, () => 0.5);
 export const HARD_FALLBACK_LAYOUT: readonly TileLayout[] = (() => {
-  const removalPairs = findSolvableRemovalOrder(HARD_POSITIONS, () => 0.5);
+  const removalPairs = HARD_REMOVAL_ORDER;
   const faces = Array<string>(HARD_POSITIONS.length);
   removalPairs.forEach(([first, second], index) => {
     faces[first] = faces[second] = TILE_FACES[index % TILE_FACES.length];
@@ -111,6 +112,38 @@ export function createSolvableLayout(difficulty: Difficulty = 'normal', random: 
     throw new Error(`${difficulty} deal did not assign every board position`);
   }
   return positions.map((position, index) => ({ ...position, face: faces[index] }));
+}
+
+export interface SolvableDeal { layout: TileLayout[]; faceDown: boolean[]; solution: Array<readonly [number, number]>; }
+
+/** Builds hidden flags from the deal's solution certificate (never both ends
+ * of a removal pair), preserving a complete route under the one-reveal rule. */
+export function createSolvableDeal(difficulty: Difficulty = 'normal', random: RandomSource = Math.random): SolvableDeal {
+  const positions = DIFFICULTIES[difficulty].positions;
+  const order = difficulty === 'hard' ? HARD_REMOVAL_ORDER : findSolvableRemovalOrder(positions, random);
+  const faces = Array<string>(positions.length);
+  shuffledFaces(positions.length / 2, random).forEach((face, index) => {
+    const [first, second] = order[index]; faces[first] = faces[second] = face;
+  });
+  const target = Math.round(positions.length * (difficulty === 'easy' ? 0 : difficulty === 'normal' ? 0.125 : 0.225));
+  const candidates = order.map((pair) => pair[random() < 0.5 ? 0 : 1]);
+  for (let index = candidates.length - 1; index > 0; index--) {
+    const swap = Math.floor(random() * (index + 1)); [candidates[index], candidates[swap]] = [candidates[swap], candidates[index]];
+  }
+  const hidden = new Set(candidates.slice(0, target));
+  return {
+    layout: positions.map((position, index) => ({ ...position, face: faces[index] })),
+    faceDown: positions.map((_, index) => hidden.has(index)),
+    solution: order.map((pair) => [...pair] as const),
+  };
+}
+
+function shuffledFaces(pairCount: number, random: RandomSource): string[] {
+  const values = pairFaces(pairCount);
+  for (let index = values.length - 1; index > 0; index--) {
+    const swap = Math.floor(random() * (index + 1)); [values[index], values[swap]] = [values[swap], values[index]];
+  }
+  return values;
 }
 
 // Backwards-compatible names used by existing consumers.

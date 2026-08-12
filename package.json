@@ -8,6 +8,7 @@
     "build": "tsc && vite build",
     "test": "rm -rf .test-dist && tsc src/GameRules.ts src/BoardLayout.ts --outDir .test-dist --target ES2022 --module ES2022 --moduleResolution bundler --skipLibCheck && node --test tests/gameRules.test.mjs && rm -rf .test-dist",
     "test:e2e": "playwright test",
+    "validate:seeds": "rm -rf .test-dist && tsc src/GameRules.ts src/BoardLayout.ts --outDir .test-dist --target ES2022 --module ES2022 --moduleResolution bundler --skipLibCheck && node tests/seed-validation.mjs && rm -rf .test-dist",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
