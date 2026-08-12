@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createFaceDownFlags, findSolvableRemovalOrder, generateSolvableTypes, getAvailablePairs, hasAvailableAction, hasAvailablePair, isClear, isFreeTile, isStuck, removePair, resetTiles, shuffleActiveTypes } from '../.test-dist/GameRules.js';
+import { createFaceDownFlags, findSolvableRemovalOrder, generateSolvableTypes, getAvailablePairs, hasAvailableAction, hasAvailablePair, isClear, isFreeTile, isStuck, isTileUncovered, removePair, resetTiles, shuffleActiveTypes } from '../.test-dist/GameRules.js';
 import { COMPACT_LAYOUT, COMPACT_POSITIONS, TILE_PAIR_FACES, DIFFICULTIES, createSolvableLayout } from '../.test-dist/BoardLayout.js';
 
 const row = (types) => types.map((type, id) => ({ id, type, x: id * 2, y: 0, z: 0, removed: false }));
@@ -34,13 +34,26 @@ test('face-down tiles use the same free rule but never expose a hint or match', 
   assert.equal(getAvailablePairs(tiles).length, 1, 'a revealed tile behaves like a normal tile');
 });
 test('difficulty controls face-down counts without changing tile information', () => {
-  const easy = createFaceDownFlags(48, 'easy', () => 0.5);
-  const normal = createFaceDownFlags(72, 'normal', () => 0.5);
-  const hard = createFaceDownFlags(96, 'hard', () => 0.5);
+  const easy = createFaceDownFlags(DIFFICULTIES.easy.positions, 'easy', () => 0.5);
+  const normal = createFaceDownFlags(DIFFICULTIES.normal.positions, 'normal', () => 0.5);
+  const hard = createFaceDownFlags(DIFFICULTIES.hard.positions, 'hard', () => 0.5);
   assert.equal(easy.filter(Boolean).length, 0);
   assert.ok(normal.filter(Boolean).length >= 8 && normal.filter(Boolean).length <= 11);
   assert.ok(hard.filter(Boolean).length >= 19 && hard.filter(Boolean).length <= 24);
   assert.ok(hard.filter(Boolean).length > normal.filter(Boolean).length);
+});
+test('normal and hard prioritize visible face-down tiles including a free tile', () => {
+  for (const [difficulty, minimum] of [['normal', 2], ['hard', 4]]) {
+    const positions = DIFFICULTIES[difficulty].positions;
+    for (let seed = 1; seed <= 100; seed++) {
+      let state = seed;
+      const random = () => ((state = (state * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+      const flags = createFaceDownFlags(positions, difficulty, random);
+      const tiles = positions.map((position, id) => ({ id, type: '', ...position, removed: false, faceDown: flags[id] }));
+      assert.ok(tiles.filter((tile) => tile.faceDown && isTileUncovered(tile, tiles)).length >= minimum);
+      assert.ok(tiles.some((tile) => tile.faceDown && isFreeTile(tile, tiles)));
+    }
+  }
 });
 test('pair removal accepts a legal match and rejects invalid taps', () => {
   const tiles = row(['a', 'b', 'b', 'a']);
