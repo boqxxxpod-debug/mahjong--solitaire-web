@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { findSolvableRemovalOrder, generateSolvableTypes, getAvailablePairs, hasAvailablePair, isClear, isFreeTile, isStuck, removePair, resetTiles, shuffleActiveTypes } from '../.test-dist/GameRules.js';
-import { COMPACT_LAYOUT, COMPACT_POSITIONS, TILE_PAIR_FACES } from '../.test-dist/BoardLayout.js';
+import { COMPACT_LAYOUT, COMPACT_POSITIONS, TILE_PAIR_FACES, DIFFICULTIES, createSolvableLayout } from '../.test-dist/BoardLayout.js';
 
 const row = (types) => types.map((type, id) => ({ id, type, x: id * 2, y: 0, z: 0, removed: false }));
 
@@ -70,4 +70,38 @@ test('shuffle preserves remaining tile count and face multiset and makes a move'
   assert.equal(tiles.filter((tile) => !tile.removed).length, 4);
   assert.deepEqual(tiles.filter((tile) => !tile.removed).map((tile) => tile.type).sort(), before);
   assert.equal(hasAvailablePair(tiles), true);
+});
+
+test('100 seeded boards per difficulty are paired, playable, and carry a complete solution', () => {
+  const averageFree = {};
+  for (const difficulty of ['easy', 'normal', 'hard']) {
+    const positions = DIFFICULTIES[difficulty].positions;
+    let freeTotal = 0;
+    for (let seed = 1; seed <= 100; seed++) {
+      let state = seed;
+      const random = () => ((state = (state * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+      const layout = createSolvableLayout(difficulty, random);
+      assert.equal(layout.length % 2, 0);
+      const counts = new Map();
+      layout.forEach(({ face }) => counts.set(face, (counts.get(face) ?? 0) + 1));
+      assert.ok([...counts.values()].every((count) => count % 2 === 0));
+      const tiles = layout.map(({ face: type, ...position }, id) => ({ id, type, ...position, removed: false }));
+      const free = tiles.filter((tile) => isFreeTile(tile, tiles));
+      freeTotal += free.length;
+      assert.ok(getAvailablePairs(tiles).length > 0);
+
+      // The generator's assignment itself is the certificate: reproduce its
+      // random stream and replay every legal pair in the geometric order.
+      state = seed;
+      const order = findSolvableRemovalOrder(positions, random);
+      for (const [first, second] of order) assert.equal(removePair(tiles[first], tiles[second], tiles), true);
+      assert.equal(isClear(tiles), true);
+    }
+    averageFree[difficulty] = freeTotal / 100;
+  }
+  assert.equal(DIFFICULTIES.easy.positions.length, 48);
+  assert.equal(DIFFICULTIES.normal.positions.length, 72);
+  assert.equal(DIFFICULTIES.hard.positions.length, 96);
+  assert.ok(averageFree.easy > averageFree.normal && averageFree.normal > averageFree.hard,
+    `expected easy > normal > hard, got ${JSON.stringify(averageFree)}`);
 });

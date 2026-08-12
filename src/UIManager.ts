@@ -10,6 +10,8 @@ export class UIManager {
   private readonly shuffleButtons = document.querySelectorAll<HTMLButtonElement>('[data-shuffle]');
   private readonly resultShuffle = document.querySelector<HTMLElement>('#result-shuffle')!;
   private readonly restartButtons = document.querySelectorAll<HTMLButtonElement>('[data-restart]');
+  private readonly difficultyButtons = document.querySelectorAll<HTMLButtonElement>('[data-difficulty]');
+  private readonly difficulty = document.querySelector<HTMLElement>('#difficulty')!;
   private startedAt = 0;
   private elapsed = 0;
   private timer?: number;
@@ -19,6 +21,20 @@ export class UIManager {
   onRestart(handler: () => void): void { this.restartButtons.forEach((button) => button.addEventListener('click', handler)); }
   onHint(handler: () => void): void { this.hintButton.addEventListener('click', handler); }
   onShuffle(handler: () => void): void { this.shuffleButtons.forEach((button) => button.addEventListener('click', handler)); }
+  onDifficulty(handler: (difficulty: 'easy' | 'normal' | 'hard') => void): void {
+    this.difficultyButtons.forEach((button) => button.addEventListener('click', () => handler(button.dataset.difficulty as 'easy' | 'normal' | 'hard')));
+  }
+  updateDifficulty(value: 'easy' | 'normal' | 'hard', hints: number | null, shuffles: number | null): void {
+    const label = value.toUpperCase();
+    this.difficulty.textContent = label;
+    this.difficultyButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.difficulty === value)));
+    this.hintButton.disabled = hints === 0;
+    this.hintButton.textContent = `HINT ${hints === null ? '∞' : hints}`;
+    this.shuffleButtons.forEach((button) => {
+      button.toggleAttribute('disabled', shuffles === 0);
+      button.textContent = `SHUFFLE ${shuffles === null ? '∞' : shuffles}`;
+    });
+  }
   updateMoves(count: number): void { this.moves.textContent = String(count); }
   showClear(moves: number): void {
     this.stopTimer();

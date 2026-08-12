@@ -1,15 +1,19 @@
 import { BoardManager } from './BoardManager';
 import { Tile } from './Tile';
 import { UIManager } from './UIManager';
+import { DIFFICULTIES, Difficulty } from './BoardLayout';
 
 export class MatchManager {
   private selected: Tile | null = null;
   private moves = 0;
+  private hints: number | null = 3;
+  private shuffles: number | null = 2;
   constructor(private readonly board: BoardManager, private readonly ui: UIManager) {
     this.ui.onRestart(() => this.restart());
     this.ui.onHint(() => this.hint());
     this.ui.onShuffle(() => this.shuffle());
-    this.ui.reset(this.board.activeTiles.length);
+    this.ui.onDifficulty((difficulty) => this.changeDifficulty(difficulty));
+    this.resetLimits(); this.ui.reset(this.board.activeTiles.length);
   }
 
   select(tile: Tile): void {
@@ -33,21 +37,41 @@ export class MatchManager {
   restart(): void {
     this.selected?.setSelected(false);
     this.selected = null;
-    this.board.reset();
+    this.board.newDeal();
     this.moves = 0;
+    this.resetLimits();
     this.ui.reset(this.board.activeTiles.length);
   }
 
+  private changeDifficulty(difficulty: Difficulty): void {
+    this.board.newDeal(difficulty);
+    this.selected = null; this.moves = 0; this.resetLimits();
+    this.ui.reset(this.board.activeTiles.length);
+    window.dispatchEvent(new Event('resize'));
+  }
+
+  private resetLimits(): void {
+    const config = DIFFICULTIES[this.board.difficulty];
+    this.hints = config.hints; this.shuffles = config.shuffles;
+    this.ui.updateDifficulty(this.board.difficulty, this.hints, this.shuffles);
+  }
+
   private hint(): void {
+    if (this.hints === 0) return;
     const pair = this.board.getHint();
     if (!pair) { this.ui.showNoMoves(); return; }
+    if (this.hints !== null) this.hints--;
+    this.ui.updateDifficulty(this.board.difficulty, this.hints, this.shuffles);
     pair[0].flash('hint'); pair[1].flash('hint');
     this.ui.showMessage('取れるペアをハイライトしました');
   }
 
   private shuffle(): void {
+    if (this.shuffles === 0) return;
     this.selected?.setSelected(false); this.selected = null;
     this.board.shuffle();
+    if (this.shuffles !== null) this.shuffles--;
+    this.ui.updateDifficulty(this.board.difficulty, this.hints, this.shuffles);
     this.ui.hideResult();
     this.ui.showMessage('残り牌の絵柄をシャッフルしました');
   }
