@@ -5,6 +5,7 @@ export interface TileState {
   y: number;
   z: number;
   removed: boolean;
+  faceDown?: boolean;
 }
 
 export interface TilePosition { x: number; y: number; z: number; }
@@ -24,7 +25,7 @@ export function isFreeTile(tile: TileState, tiles: readonly TileState[]): boolea
 }
 
 export function getAvailablePairs<T extends TileState>(tiles: readonly T[]): Array<readonly [T, T]> {
-  const free = tiles.filter((tile) => isFreeTile(tile, tiles));
+  const free = tiles.filter((tile) => !tile.faceDown && isFreeTile(tile, tiles));
   const pairs: Array<readonly [T, T]> = [];
   free.forEach((tile, index) => free.slice(index + 1).forEach((other) => {
     if (other.type === tile.type) pairs.push([tile, other]);
@@ -33,14 +34,26 @@ export function getAvailablePairs<T extends TileState>(tiles: readonly T[]): Arr
 }
 
 export function hasAvailablePair(tiles: readonly TileState[]): boolean { return getAvailablePairs(tiles).length > 0; }
+/** A face-down free tile is also a legal action, even when no visible pair exists. */
+export function hasAvailableAction(tiles: readonly TileState[]): boolean {
+  return hasAvailablePair(tiles) || tiles.some((tile) => tile.faceDown && isFreeTile(tile, tiles));
+}
 export function isClear(tiles: readonly TileState[]): boolean { return tiles.every((tile) => tile.removed); }
-export function isStuck(tiles: readonly TileState[]): boolean { return !isClear(tiles) && !hasAvailablePair(tiles); }
+export function isStuck(tiles: readonly TileState[]): boolean { return !isClear(tiles) && !hasAvailableAction(tiles); }
 
 export function removePair(first: TileState, second: TileState, tiles: readonly TileState[]): boolean {
-  if (first.id === second.id || first.type !== second.type || !isFreeTile(first, tiles) || !isFreeTile(second, tiles)) return false;
+  if (first.faceDown || second.faceDown || first.id === second.id || first.type !== second.type || !isFreeTile(first, tiles) || !isFreeTile(second, tiles)) return false;
   first.removed = true;
   second.removed = true;
   return true;
+}
+
+/** Marks a difficulty-dependent subset without changing the solvable deal. */
+export function createFaceDownFlags(count: number, difficulty: 'easy' | 'normal' | 'hard', random: RandomSource = Math.random): boolean[] {
+  const ratio = difficulty === 'easy' ? 0 : difficulty === 'normal' ? 0.125 : 0.225;
+  const faceDownCount = Math.round(count * ratio);
+  const chosen = new Set(shuffled(Array.from({ length: count }, (_, index) => index), random).slice(0, faceDownCount));
+  return Array.from({ length: count }, (_, index) => chosen.has(index));
 }
 
 /** Restores the logical deal used by RESTART without changing board coordinates. */

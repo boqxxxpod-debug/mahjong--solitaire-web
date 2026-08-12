@@ -18,6 +18,11 @@ export class MatchManager {
 
   select(tile: Tile): void {
     if (!this.board.isFree(tile)) { tile.flash('blocked'); this.ui.showMessage('この牌はまだ取得できません', true); return; }
+    if (tile.faceDown) {
+      this.selected?.setSelected(false); this.selected = null;
+      tile.reveal(); this.ui.showMessage('裏向き牌を表にしました');
+      return;
+    }
     if (tile === this.selected) { tile.setSelected(false); this.selected = null; this.ui.showMessage('同じ牌を2枚選んでください'); return; }
     if (!this.selected) { tile.setSelected(true); this.selected = tile; this.ui.showMessage('同じ絵柄の牌を選んでください'); return; }
     if (this.selected.type === tile.type) {
@@ -26,7 +31,7 @@ export class MatchManager {
       this.moves++; this.ui.updateMoves(this.moves);
       const count = this.board.activeTiles.length; this.ui.updateRemaining(count);
       if (count === 0) this.ui.showClear(this.moves);
-      else if (!this.board.hasAvailablePair()) this.ui.showNoMoves();
+      else if (!this.board.hasAvailableAction()) this.ui.showNoMoves();
       else this.ui.showMessage('マッチ！ 次のペアを探しましょう');
       return;
     }
@@ -37,7 +42,7 @@ export class MatchManager {
   restart(): void {
     this.selected?.setSelected(false);
     this.selected = null;
-    this.board.newDeal();
+    this.board.restart();
     this.moves = 0;
     this.resetLimits();
     this.ui.reset(this.board.activeTiles.length);

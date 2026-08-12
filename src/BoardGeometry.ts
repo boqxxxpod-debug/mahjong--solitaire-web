@@ -10,6 +10,11 @@ export class BoardGeometry {
   private readonly side = new THREE.MeshStandardMaterial({ color: 0xe7dcae, roughness: 0.55 });
   private readonly bottom = new THREE.MeshStandardMaterial({ color: 0x2a8d73, roughness: 0.7 });
   private readonly faces = new Map<string, THREE.MeshStandardMaterial>();
+  private readonly back = new THREE.MeshStandardMaterial({
+    map: this.createBackTexture(),
+    roughness: 0.5,
+    metalness: 0.08,
+  });
 
   materials(type: string): THREE.Material[] {
     let face = this.faces.get(type);
@@ -19,5 +24,25 @@ export class BoardGeometry {
     }
     // BoxGeometry order: right, left, top, bottom, front, back. The canvas face sits on top.
     return [this.side, this.side, face, this.bottom, this.side, this.side];
+  }
+
+  backMaterials(): THREE.Material[] {
+    return [this.side, this.side, this.back, this.bottom, this.side, this.side];
+  }
+
+
+  private createBackTexture(): THREE.CanvasTexture {
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 256;
+    const context = canvas.getContext('2d')!;
+    context.fillStyle = '#075b55'; context.fillRect(0, 0, 256, 256);
+    context.strokeStyle = '#3aa38e'; context.lineWidth = 7;
+    context.strokeRect(20, 20, 216, 216); context.strokeRect(36, 36, 184, 184);
+    context.globalAlpha = 0.35; context.lineWidth = 3;
+    for (let offset = -256; offset < 512; offset += 32) {
+      context.beginPath(); context.moveTo(offset, 0); context.lineTo(offset + 256, 256); context.stroke();
+      context.beginPath(); context.moveTo(offset + 256, 0); context.lineTo(offset, 256); context.stroke();
+    }
+    const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
   }
 }
