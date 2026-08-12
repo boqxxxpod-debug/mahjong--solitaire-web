@@ -56,15 +56,15 @@ export function getAvailablePairs<T extends TileState>(tiles: readonly T[]): Arr
 
 export function hasAvailablePair(tiles: readonly TileState[]): boolean { return getAvailablePairs(tiles).length > 0; }
 /**
- * Returns actions which can actually remove a pair under the one-revealed-tile
- * rule. A reveal is useful only when that exact virtual reveal creates a pair.
+ * Returns actions which can reach removal under the one-revealed-tile rule.
+ * Reveal hints are the first step of a legal path to an actual pair.
  */
 export function getAvailableActions<T extends TileState>(tiles: readonly T[]): Array<AvailableAction<T>> {
   const pairs = getAvailablePairs(tiles);
   if (pairs.length) return pairs.map((pair): AvailableAction<T> => ({ kind: 'pair', tiles: pair }));
 
-  return tiles.filter((tile) => tile.faceDown && isFreeTile(tile, tiles) && revealCreatesPair(tile, tiles))
-    .map((tile): AvailableAction<T> => ({ kind: 'reveal', tile }));
+  const reveal = findRevealLeadingToPair(tiles);
+  return reveal ? [{ kind: 'reveal', tile: reveal }] : [];
 }
 
 /** Whether the current board can progress to removing a pair. */
@@ -120,13 +120,49 @@ export function analyzeBoard(initial: readonly TileState[], nodeLimit = 1_000_00
   };
 }
 
-function revealCreatesPair(candidate: TileState, tiles: readonly TileState[]): boolean {
-  const virtual = tiles.map((tile) => ({
+/**
+ * Explore legal reveals until a removable pair is reached. The normalized
+ * state key prevents a sequence which only turns hidden tiles over in turn
+ * from being mistaken for progress (or being explored forever).
+ */
+function findRevealLeadingToPair<T extends TileState>(tiles: readonly T[]): T | null {
+  const pending: Array<{ state: TileState[]; firstRevealId: number }> = [];
+  for (const tile of tiles) {
+    if (tile.faceDown && isFreeTile(tile, tiles)) {
+      pending.push({ state: revealTile(tile.id, tiles), firstRevealId: tile.id });
+    }
+  }
+  const visited = new Set<string>();
+
+  while (pending.length) {
+    const { state, firstRevealId } = pending.shift()!;
+    const key = normalizeBoardState(state);
+    if (visited.has(key)) continue;
+    visited.add(key);
+    if (hasAvailablePair(state)) return tiles.find((tile) => tile.id === firstRevealId) ?? null;
+
+    for (const tile of state) {
+      if (tile.faceDown && isFreeTile(tile, state)) {
+        pending.push({ state: revealTile(tile.id, state), firstRevealId });
+      }
+    }
+  }
+  return null;
+}
+
+function revealTile(candidateId: number, tiles: readonly TileState[]): TileState[] {
+  return tiles.map((tile) => ({
     ...tile,
-    // Revealing candidate turns every other originally hidden tile back over.
-    faceDown: tile.id === candidate.id ? false : tile.originallyFaceDown ? true : tile.faceDown,
+    // Only one originally hidden tile may remain face-up at a time.
+    faceDown: tile.id === candidateId ? false : tile.originallyFaceDown ? true : tile.faceDown,
   }));
-  return hasAvailablePair(virtual);
+}
+
+function normalizeBoardState(tiles: readonly TileState[]): string {
+  return [...tiles]
+    .sort((first, second) => first.id - second.id)
+    .map((tile) => `${tile.id}:${tile.removed ? 1 : 0}:${tile.faceDown ? 1 : 0}:${isFreeTile(tile, tiles) ? 1 : 0}`)
+    .join('|');
 }
 
 export function removePair(first: TileState, second: TileState, tiles: readonly TileState[]): boolean {
