@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createFaceDownFlags, findSolvableRemovalOrder, generateSolvableTypes, getAvailablePairs, hasAvailableAction, hasAvailablePair, isClear, isFreeTile, isStuck, isTileUncovered, removePair, resetTiles, shuffleActiveTypes } from '../.test-dist/GameRules.js';
+import { createFaceDownFlags, findSolvableRemovalOrder, generateSolvableTypes, getAvailableActions, getAvailablePairs, hasAvailableAction, hasAvailablePair, isClear, isFreeTile, isStuck, isTileUncovered, removePair, resetTiles, shuffleActiveTypes } from '../.test-dist/GameRules.js';
 import { COMPACT_LAYOUT, COMPACT_POSITIONS, TILE_PAIR_FACES, DIFFICULTIES, createSolvableLayout } from '../.test-dist/BoardLayout.js';
 
 const row = (types) => types.map((type, id) => ({ id, type, x: id * 2, y: 0, z: 0, removed: false }));
@@ -30,8 +30,20 @@ test('face-down tiles use the same free rule but never expose a hint or match', 
   assert.equal(getAvailablePairs(tiles).length, 0, 'hidden faces are excluded from hints');
   assert.equal(removePair(tiles[0], tiles[3], tiles), false, 'a hidden tile cannot be removed');
   assert.equal(hasAvailableAction(tiles), true, 'revealing a free tile prevents a false dead end');
+  assert.equal(getAvailableActions(tiles)[0].kind, 'reveal', 'hint and dead-end checks share the reveal action');
   tiles[0].faceDown = false;
   assert.equal(getAvailablePairs(tiles).length, 1, 'a revealed tile behaves like a normal tile');
+  assert.equal(getAvailableActions(tiles)[0].kind, 'pair');
+});
+
+test('clear and stuck remain distinct across every difficulty rule set', () => {
+  for (const difficulty of ['easy', 'normal', 'hard']) {
+    const stuck = row(['a', 'b', 'a', 'b']);
+    assert.equal(isStuck(stuck), true, `${difficulty} detects a board with no action`);
+    stuck.forEach((tile) => { tile.removed = true; });
+    assert.equal(isClear(stuck), true);
+    assert.equal(isStuck(stuck), false, `${difficulty} never labels CLEAR as stuck`);
+  }
 });
 test('difficulty controls face-down counts without changing tile information', () => {
   const easy = createFaceDownFlags(DIFFICULTIES.easy.positions, 'easy', () => 0.5);

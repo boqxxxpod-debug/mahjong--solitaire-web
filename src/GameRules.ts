@@ -10,6 +10,9 @@ export interface TileState {
 
 export interface TilePosition { x: number; y: number; z: number; }
 export type RandomSource = () => number;
+export type AvailableAction<T = TileState> =
+  | { kind: 'pair'; tiles: readonly [T, T] }
+  | { kind: 'reveal'; tile: T };
 
 export function isFreeTile(tile: TileState, tiles: readonly TileState[]): boolean {
   if (tile.removed) return false;
@@ -39,9 +42,18 @@ export function getAvailablePairs<T extends TileState>(tiles: readonly T[]): Arr
 }
 
 export function hasAvailablePair(tiles: readonly TileState[]): boolean { return getAvailablePairs(tiles).length > 0; }
+/** Returns every action the player can take now, including revealing a free hidden tile. */
+export function getAvailableActions<T extends TileState>(tiles: readonly T[]): Array<AvailableAction<T>> {
+  return [
+    ...getAvailablePairs(tiles).map((pair): AvailableAction<T> => ({ kind: 'pair', tiles: pair })),
+    ...tiles.filter((tile) => tile.faceDown && isFreeTile(tile, tiles))
+      .map((tile): AvailableAction<T> => ({ kind: 'reveal', tile })),
+  ];
+}
+
 /** A face-down free tile is also a legal action, even when no visible pair exists. */
 export function hasAvailableAction(tiles: readonly TileState[]): boolean {
-  return hasAvailablePair(tiles) || tiles.some((tile) => tile.faceDown && isFreeTile(tile, tiles));
+  return getAvailableActions(tiles).length > 0;
 }
 export function isClear(tiles: readonly TileState[]): boolean { return tiles.every((tile) => tile.removed); }
 export function isStuck(tiles: readonly TileState[]): boolean { return !isClear(tiles) && !hasAvailableAction(tiles); }

@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { BoardGeometry } from './BoardGeometry';
 import { Tile } from './Tile';
-import { createFaceDownFlags, getAvailablePairs, hasAvailableAction, isFreeTile, isTileUncovered, shuffleActiveTypes, TileState } from './GameRules';
+import { createFaceDownFlags, getAvailableActions, hasAvailableAction, isFreeTile, isTileUncovered, shuffleActiveTypes } from './GameRules';
+import type { AvailableAction, TileState } from './GameRules';
 import { createSolvableLayout, Difficulty } from './BoardLayout';
 
 export class BoardManager {
@@ -74,9 +75,12 @@ export class BoardManager {
 
   hasAvailableAction(): boolean { return hasAvailableAction(this.states()); }
 
-  getHint(): readonly [Tile, Tile] | null {
-    const pair = getAvailablePairs(this.states())[0];
-    return pair ? [this.tiles[pair[0].id], this.tiles[pair[1].id]] : null;
+  getHint(): AvailableAction<Tile> | null {
+    const action = getAvailableActions(this.states())[0];
+    if (!action) return null;
+    return action.kind === 'pair'
+      ? { kind: 'pair', tiles: [this.tiles[action.tiles[0].id], this.tiles[action.tiles[1].id]] }
+      : { kind: 'reveal', tile: this.tiles[action.tile.id] };
   }
 
   shuffle(): void {

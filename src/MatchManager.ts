@@ -10,6 +10,7 @@ export class MatchManager {
   private moves = 0;
   private hints: number | null = 3;
   private shuffles: number | null = 2;
+  private stuck = false;
   constructor(private readonly board: BoardManager, private readonly ui: UIManager) {
     this.ui.onRestart(() => this.restart());
     this.ui.onHint(() => this.hint());
@@ -19,7 +20,7 @@ export class MatchManager {
   }
 
   select(tile: Tile): void {
-    if (this.flipping) return;
+    if (this.flipping || this.stuck) return;
     if (!this.board.isFree(tile)) { tile.flash('blocked'); this.ui.showMessage('この牌はまだ取得できません', true); return; }
     if (tile.faceDown) {
       void this.revealFaceDown(tile);
@@ -35,7 +36,7 @@ export class MatchManager {
       this.moves++; this.ui.updateMoves(this.moves);
       const count = this.board.activeTiles.length; this.ui.updateRemaining(count);
       if (count === 0) this.ui.showClear(this.moves);
-      else if (!this.board.hasAvailableAction()) this.ui.showNoMoves();
+      else if (!this.board.hasAvailableAction()) this.showNoMoves();
       else this.ui.showMessage('マッチ！ 次のペアを探しましょう');
       return;
     }
@@ -47,6 +48,7 @@ export class MatchManager {
     this.selected?.setSelected(false);
     this.selected = null;
     this.revealedFaceDownTile = null; this.flipping = false;
+    this.stuck = false;
     this.board.restart();
     this.moves = 0;
     this.resetLimits();
@@ -57,7 +59,7 @@ export class MatchManager {
     this.board.newDeal(difficulty);
     // Fit and render the completed board before publishing its new count in UI.
     window.dispatchEvent(new Event('resize'));
-    this.selected = null; this.revealedFaceDownTile = null; this.flipping = false; this.moves = 0; this.resetLimits();
+    this.selected = null; this.revealedFaceDownTile = null; this.flipping = false; this.stuck = false; this.moves = 0; this.resetLimits();
     this.ui.reset(this.board.activeTiles.length);
   }
 
@@ -69,18 +71,24 @@ export class MatchManager {
 
   private hint(): void {
     if (this.hints === 0) return;
-    const pair = this.board.getHint();
-    if (!pair) { this.ui.showNoMoves(); return; }
+    const action = this.board.getHint();
+    if (!action) { this.showNoMoves(); return; }
     if (this.hints !== null) this.hints--;
     this.ui.updateDifficulty(this.board.difficulty, this.hints, this.shuffles);
-    pair[0].flash('hint'); pair[1].flash('hint');
-    this.ui.showMessage('取れるペアをハイライトしました');
+    if (action.kind === 'pair') {
+      action.tiles[0].flash('hint'); action.tiles[1].flash('hint');
+      this.ui.showMessage('取れるペアをハイライトしました');
+    } else {
+      action.tile.flash('hint');
+      this.ui.showMessage('めくれる裏向き牌をハイライトしました');
+    }
   }
 
   private shuffle(): void {
     if (this.shuffles === 0) return;
     this.selected?.setSelected(false); this.selected = null;
     this.board.shuffle();
+    this.stuck = false;
     if (this.shuffles !== null) this.shuffles--;
     this.ui.updateDifficulty(this.board.difficulty, this.hints, this.shuffles);
     this.ui.hideResult();
@@ -105,5 +113,11 @@ export class MatchManager {
     this.ui.showMessage('裏向き牌を表にしました');
     await Promise.all(animations);
     this.flipping = false;
+    if (!this.board.hasAvailableAction()) this.showNoMoves();
+  }
+
+  private showNoMoves(): void {
+    this.stuck = true;
+    this.ui.showNoMoves(this.shuffles !== 0);
   }
 }
