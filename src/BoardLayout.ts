@@ -9,19 +9,6 @@ export interface DifficultyConfig {
   shuffles: number | null;
 }
 
-const row = (y: number, z: number, count: number): TilePosition[] =>
-  Array.from({ length: count }, (_, index) => ({ x: index * 2 - (count - 1), y, z }));
-
-export const EASY_POSITIONS: readonly TilePosition[] = [
-  ...row(-2, 0, 12), ...row(0, 0, 10), ...row(2, 0, 10),
-  ...row(-1, 1, 7), ...row(1, 1, 7), ...row(0, 2, 2),
-];
-
-export const NORMAL_POSITIONS: readonly TilePosition[] = [
-  ...row(-3, 0, 10), ...row(-1, 0, 10), ...row(1, 0, 10), ...row(3, 0, 10),
-  ...row(-1, 1, 10), ...row(1, 1, 10), ...row(0, 2, 10), ...row(0, 3, 2),
-];
-
 const rectangle = (columns: number, rows: number, z: number): TilePosition[] =>
   Array.from({ length: rows }, (_, rowIndex) =>
     Array.from({ length: columns }, (_, columnIndex) => ({
@@ -29,6 +16,19 @@ const rectangle = (columns: number, rows: number, z: number): TilePosition[] =>
       y: rowIndex * 2 - (rows - 1),
       z,
     }))).flat();
+
+/** Compact, stepped layouts keep the footprint at eight tiles on phones. */
+export const EASY_POSITIONS: readonly TilePosition[] = [
+  ...rectangle(8, 4, 0),
+  ...rectangle(6, 2, 1),
+  ...rectangle(2, 2, 2),
+];
+
+export const NORMAL_POSITIONS: readonly TilePosition[] = [
+  ...rectangle(8, 5, 0),
+  ...rectangle(6, 4, 1),
+  ...rectangle(4, 2, 2),
+];
 
 /**
  * Smartphone-first turtle layout: 48 + 28 + 16 + 4 = 96 tiles.

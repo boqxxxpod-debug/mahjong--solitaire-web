@@ -1,6 +1,17 @@
 import { expect, test } from '@playwright/test';
 import { PNG } from 'pngjs';
 
+for (const [difficulty, count] of [['EASY', '48'], ['NORMAL', '72'], ['HARD', '96']] as const) {
+  test(`${difficulty} fits the 390x844 smartphone viewport`, async ({ page }) => {
+    await page.goto(`/?seed=${difficulty.toLowerCase()}-mobile-layout`);
+    await page.getByRole('button', { name: difficulty }).click();
+    await expect(page.locator('#remaining')).toHaveText(count);
+    await expect(page.locator('#game-canvas')).toHaveCSS('width', '390px');
+    await expect(page.locator('#game-canvas')).toHaveCSS('height', '844px');
+    await page.screenshot({ path: `screenshots/${difficulty.toLowerCase()}-390x844.png`, fullPage: true });
+  });
+}
+
 test('Hard renders a 96-tile board at a smartphone viewport', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
