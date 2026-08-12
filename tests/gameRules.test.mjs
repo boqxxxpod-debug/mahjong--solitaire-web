@@ -58,6 +58,16 @@ test('reveal-only cycles with no resulting pair are stuck', () => {
   assert.equal(isStuck(tiles), true, '52 tiles cannot progress by endlessly cycling reveals');
 });
 
+test('revealing North is stuck when no legal reveal sequence can remove it', () => {
+  const tiles = row(['north', 'bamboo', 'circle', 'east']);
+  tiles[0].faceDown = tiles[0].originallyFaceDown = true;
+  tiles[3].faceDown = tiles[3].originallyFaceDown = true;
+
+  assert.equal(isFreeTile(tiles[0], tiles), true, 'the reported North can legally be revealed');
+  assert.equal(getAvailableActions(tiles).length, 0, 'a reveal is not a hint unless it can lead to removal');
+  assert.equal(isStuck(tiles), true, 'cycling between unmatchable hidden tiles is NO MORE MOVES');
+});
+
 test('matching hidden free tiles cannot be removed because only one can be revealed', () => {
   const tiles = row(['a', 'x', 'y', 'a']);
   for (const tile of [tiles[0], tiles[3]]) tile.faceDown = tile.originallyFaceDown = true;
