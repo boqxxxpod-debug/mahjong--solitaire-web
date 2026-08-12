@@ -55,3 +55,47 @@ for (const [difficulty, minimum] of [['NORMAL', 2], ['HARD', 4]] as const) {
     await page.screenshot({ path: `screenshots/${difficulty.toLowerCase()}-face-down-390x844.png`, fullPage: true });
   });
 }
+
+test('only one originally face-down tile stays revealed during rapid taps', async ({ page }) => {
+  await page.goto('/?seed=normal-visible-backs');
+  await page.getByRole('button', { name: 'NORMAL' }).click();
+  const result = await page.evaluate(async () => {
+    const game = (window as Window & { __mahjongGameTest?: any }).__mahjongGameTest;
+    const initialFaceDownIds = game.board.tiles.filter((tile: any) => tile.faceDown).map((tile: any) => tile.id);
+    // Keep three independently FREE hidden tiles available so A -> B -> C can
+    // be asserted without depending on a particular generated face assignment.
+    const freeTiles = game.board.tiles.filter((tile: any) => game.board.isFree(tile));
+    freeTiles.slice(0, 3).forEach((tile: any) => tile.setFaceDown(true));
+    const originalFaceDownIds = game.board.tiles.filter((tile: any) => tile.faceDown).map((tile: any) => tile.id);
+    const freeHidden = () => game.board.tiles.filter((tile: any) => tile.faceDown && game.board.isFree(tile));
+    const [first] = freeHidden();
+    game.matches.select(first);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    const second = freeHidden().find((tile: any) => tile !== first);
+    game.matches.select(second);
+    // A third tap during the animation must be ignored by the input lock.
+    const thirdDuringFlip = freeHidden().find((tile: any) => tile !== second);
+    if (thirdDuringFlip) game.matches.select(thirdDuringFlip);
+    const duringFlip = originalFaceDownIds.filter((id: number) => !game.board.tiles[id].faceDown);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const firstReturnedFaceDown = first.faceDown;
+
+    const third = freeHidden().find((tile: any) => tile !== first && tile !== second);
+    if (third) game.matches.select(third);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const afterThird = originalFaceDownIds.filter((id: number) => !game.board.tiles[id].faceDown);
+    game.matches.restart();
+    return {
+      firstReturnedFaceDown,
+      duringFlip,
+      afterThird,
+      restartedHiddenIds: game.board.tiles.filter((tile: any) => tile.faceDown).map((tile: any) => tile.id),
+      initialFaceDownIds,
+    };
+  });
+  expect(result.firstReturnedFaceDown).toBe(true);
+  expect(result.duringFlip).toHaveLength(1);
+  expect(result.afterThird).toHaveLength(1);
+  expect(result.restartedHiddenIds).toEqual(result.initialFaceDownIds);
+});

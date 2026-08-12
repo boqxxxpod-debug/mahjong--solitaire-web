@@ -10,6 +10,7 @@ export class Tile {
   faceDown: boolean;
 
   private feedbackTimer?: number;
+  private flipGeneration = 0;
   constructor(readonly id: number, public type: string, readonly logical: TilePosition, private readonly geometry: BoardGeometry, faceDown = false) {
     this.faceDown = faceDown;
     const materials = this.createMaterials(type);
@@ -34,24 +35,30 @@ export class Tile {
   }
 
   setFaceDown(faceDown: boolean): void {
+    this.flipGeneration++;
     this.faceDown = faceDown;
+    this.mesh.rotation.y = 0;
     this.replaceMaterials();
   }
 
-  reveal(): void {
-    if (!this.faceDown) return;
-    this.faceDown = false;
+  flipTo(faceDown: boolean): Promise<void> {
+    if (this.faceDown === faceDown) return Promise.resolve();
+    const generation = ++this.flipGeneration;
+    this.faceDown = faceDown;
     const started = performance.now();
     const duration = 260;
     let swapped = false;
-    const animate = (now: number) => {
-      const progress = Math.min(1, (now - started) / duration);
-      this.mesh.rotation.y = Math.sin(progress * Math.PI) * Math.PI / 2;
-      if (!swapped && progress >= 0.5) { swapped = true; this.replaceMaterials(); }
-      if (progress < 1) requestAnimationFrame(animate);
-      else this.mesh.rotation.y = 0;
-    };
-    requestAnimationFrame(animate);
+    return new Promise((resolve) => {
+      const animate = (now: number) => {
+        if (generation !== this.flipGeneration) { resolve(); return; }
+        const progress = Math.min(1, (now - started) / duration);
+        this.mesh.rotation.y = Math.sin(progress * Math.PI) * Math.PI / 2;
+        if (!swapped && progress >= 0.5) { swapped = true; this.replaceMaterials(); }
+        if (progress < 1) requestAnimationFrame(animate);
+        else { this.mesh.rotation.y = 0; resolve(); }
+      };
+      requestAnimationFrame(animate);
+    });
   }
 
   private replaceMaterials(): void {

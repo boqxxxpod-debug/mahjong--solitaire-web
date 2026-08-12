@@ -32,6 +32,10 @@ export class Game {
     }
     const ui = new UIManager();
     const matches = new MatchManager(this.board, ui);
+    (window as Window & { __mahjongGameTest?: { board: BoardManager; matches: MatchManager } }).__mahjongGameTest = {
+      board: this.board,
+      matches,
+    };
     new InputController(canvas, this.camera, this.board, matches);
     window.addEventListener('resize', () => this.resize());
     new ResizeObserver(() => this.resize()).observe(canvas);
