@@ -1,6 +1,32 @@
 import { expect, test } from '@playwright/test';
 import { PNG } from 'pngjs';
 
+for (const viewport of [{ width: 360, height: 800 }, { width: 390, height: 844 }, { width: 393, height: 873 }, { width: 412, height: 915 }]) {
+  for (const difficulty of ['EASY', 'NORMAL', 'HARD'] as const) {
+    test(`${difficulty} UI fits ${viewport.width}x${viewport.height}`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      await page.goto(`/?seed=${difficulty.toLowerCase()}-${viewport.width}x${viewport.height}`);
+      await page.getByRole('button', { name: difficulty }).click();
+      await page.waitForTimeout(250);
+      const fit = await page.evaluate(() => {
+        const selectors = ['#game-canvas', '.hud', '.buttons', '.difficulty-picker'];
+        return selectors.map((selector) => {
+          const element = document.querySelector(selector);
+          if (!element) return { selector, missing: true };
+          const box = element.getBoundingClientRect();
+          return { selector, left: box.left, right: box.right, top: box.top, bottom: box.bottom };
+        });
+      });
+      expect(fit.every((box: any) => !box.missing && box.left >= 0 && box.right <= viewport.width
+        && box.top >= 0 && box.bottom <= viewport.height)).toBe(true);
+      const diagnostics = await page.evaluate(() => (window as Window & { __mahjongBoardDiagnostics?: any }).__mahjongBoardDiagnostics);
+      expect(diagnostics.boardTileCount).toBe({ EASY: 36, NORMAL: 44, HARD: 60 }[difficulty]);
+      if (difficulty !== 'EASY') expect(diagnostics.visibleFaceDownCount).toBeGreaterThan(0);
+      await page.screenshot({ path: `screenshots/${difficulty.toLowerCase()}-${viewport.width}x${viewport.height}.png`, fullPage: true });
+    });
+  }
+}
+
 for (const [difficulty, count] of [['EASY', '36'], ['NORMAL', '44'], ['HARD', '60']] as const) {
   test(`${difficulty} fills the 390x844 play area with large tiles`, async ({ page }) => {
     await page.goto(`/?seed=${difficulty.toLowerCase()}-mobile-layout`);
