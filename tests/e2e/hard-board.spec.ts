@@ -6,6 +6,8 @@ for (const [difficulty, count] of [['EASY', '36'], ['NORMAL', '44'], ['HARD', '6
     await page.goto(`/?seed=${difficulty.toLowerCase()}-mobile-layout`);
     await page.getByRole('button', { name: difficulty }).click();
     await expect(page.locator('#remaining')).toHaveText(count);
+    await expect(page.locator('#game-canvas')).toHaveCSS('width', '390px');
+    await expect(page.locator('#game-canvas')).toHaveCSS('height', '844px');
     await page.waitForTimeout(500);
     const tileBounds = await page.evaluate(() => {
       const game = (window as Window & { __mahjongGameTest?: any }).__mahjongGameTest;

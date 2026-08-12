@@ -139,6 +139,17 @@ test('100 seeded boards per difficulty are paired, playable, and carry a complet
   assert.equal(DIFFICULTIES.hard.positions.length, 60);
 });
 
+test('difficulty layouts stay compact and become progressively more layered', () => {
+  const expected = { easy: { count: 36, layers: 3 }, normal: { count: 44, layers: 4 }, hard: { count: 60, layers: 5 } };
+  for (const [difficulty, metrics] of Object.entries(expected)) {
+    const positions = DIFFICULTIES[difficulty].positions;
+    assert.equal(positions.length, metrics.count);
+    assert.equal(new Set(positions.map(({ z }) => z)).size, metrics.layers);
+    assert.ok(Math.max(...positions.map(({ x }) => x)) - Math.min(...positions.map(({ x }) => x)) <= 8,
+      `${difficulty} footprint must be no wider than five tile columns`);
+  }
+});
+
 test('hard uses a narrow five-layer 16/16/16/6/6 tower', () => {
   const positions = DIFFICULTIES.hard.positions;
   assert.deepEqual([0, 1, 2, 3, 4].map((z) => positions.filter((tile) => tile.z === z).length), [16, 16, 16, 6, 6]);
