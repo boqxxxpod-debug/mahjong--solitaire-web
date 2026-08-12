@@ -45,9 +45,10 @@ export class MatchManager {
 
   private changeDifficulty(difficulty: Difficulty): void {
     this.board.newDeal(difficulty);
+    // Fit and render the completed board before publishing its new count in UI.
+    window.dispatchEvent(new Event('resize'));
     this.selected = null; this.moves = 0; this.resetLimits();
     this.ui.reset(this.board.activeTiles.length);
-    window.dispatchEvent(new Event('resize'));
   }
 
   private resetLimits(): void {

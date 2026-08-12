@@ -31,10 +31,24 @@ export class BoardManager {
     this.tiles = nextTiles;
     this.tiles.forEach((tile) => this.scene.add(tile.mesh));
     if (this.tileMeshCount !== expectedCount) throw new Error(`${difficulty} scene contains ${this.tileMeshCount}/${expectedCount} tile meshes`);
+    this.assertRenderable(expectedCount);
     this.refreshFreeTiles();
+
+    const diagnostics = {
+      difficulty,
+      layoutCount: layout.length,
+      tileDefinitionCount: nextTiles.length,
+      boardTileCount: this.tiles.length,
+      sceneChildrenCount: this.scene.children.length,
+      tileMeshCount: this.tileMeshCount,
+    };
+    console.log(diagnostics);
+    (window as Window & { __mahjongBoardDiagnostics?: typeof diagnostics }).__mahjongBoardDiagnostics = diagnostics;
   }
 
-  get tileMeshCount(): number { return this.tiles.filter((tile) => this.scene.children.includes(tile.mesh)).length; }
+  get tileMeshCount(): number {
+    return this.scene.children.filter((child) => child instanceof THREE.Mesh && child.userData.tile instanceof Tile).length;
+  }
 
   get activeTiles(): Tile[] { return this.tiles.filter((tile) => !tile.removed); }
 
@@ -74,6 +88,18 @@ export class BoardManager {
 
   private refreshFreeTiles(): void {
     this.tiles.forEach((tile) => tile.setFree(this.isFree(tile)));
+  }
+
+  private assertRenderable(expectedCount: number): void {
+    const invalid = this.tiles.filter((tile) => {
+      const materials = Array.isArray(tile.mesh.material) ? tile.mesh.material : [tile.mesh.material];
+      return !tile.mesh.visible || !tile.mesh.position.toArray().every(Number.isFinite) ||
+        !tile.mesh.scale.toArray().every((value) => Number.isFinite(value) && value > 0) ||
+        materials.some((material) => material.opacity <= 0 || !Number.isFinite(material.opacity));
+    });
+    if (invalid.length || this.tileMeshCount !== expectedCount) {
+      throw new Error(`${this.difficulty} has ${invalid.length} non-renderable tiles`);
+    }
   }
 
   private hashSeed(value: string): number {
