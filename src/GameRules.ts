@@ -93,16 +93,12 @@ export function generateSolvableTypes(positions: readonly TilePosition[], faces:
 /** Shuffles active faces in place, forcing a playable free pair when possible. */
 export function shuffleActiveTypes(tiles: TileState[], random: RandomSource = Math.random): void {
   const active = tiles.filter((tile) => !tile.removed);
-  const types = shuffled(active.map((tile) => tile.type), random);
+  if (!active.length) return;
+  const counts = new Map<string, number>();
+  active.forEach((tile) => counts.set(tile.type, (counts.get(tile.type) ?? 0) + 1));
+  if ([...counts.values()].some((count) => count % 2)) throw new Error('Remaining faces must form pairs');
+  const faces = [...counts].flatMap(([type, count]) => Array<string>(count / 2).fill(type));
+  const positions = active.map(({ x, y, z }) => ({ x, y, z }));
+  const types = generateSolvableTypes(positions, faces, random);
   active.forEach((tile, index) => { tile.type = types[index]; });
-  if (active.length < 2 || hasAvailablePair(tiles)) return;
-  const free = active.filter((tile) => isFreeTile(tile, tiles));
-  const pairedType = types.find((type, index) => types.indexOf(type) !== index);
-  if (free.length < 2 || !pairedType) return;
-  for (const target of free.slice(0, 2)) {
-    if (target.type === pairedType) continue;
-    const donor = active.find((tile) => tile !== target && !free.slice(0, 2).includes(tile) && tile.type === pairedType);
-    if (!donor) continue;
-    [target.type, donor.type] = [donor.type, target.type];
-  }
 }

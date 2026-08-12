@@ -1,21 +1,29 @@
 import * as THREE from 'three';
 import { BoardGeometry } from './BoardGeometry';
 import { Tile } from './Tile';
-import { getAvailablePairs, hasAvailablePair, isFreeTile, resetTiles, shuffleActiveTypes, TileState } from './GameRules';
-import { createSolvableLayout } from './BoardLayout';
+import { getAvailablePairs, hasAvailablePair, isFreeTile, shuffleActiveTypes, TileState } from './GameRules';
+import { createSolvableLayout, Difficulty } from './BoardLayout';
 
 export class BoardManager {
-  readonly tiles: Tile[];
-  private readonly initialFaces: readonly string[];
-  constructor(scene: THREE.Scene) {
-    const geometry = new BoardGeometry();
+  tiles: Tile[] = [];
+  private readonly geometry = new BoardGeometry();
+  private seedState: number;
+  constructor(private readonly scene: THREE.Scene, public difficulty: Difficulty = 'normal') {
     const seed = new URLSearchParams(location.search).get('seed');
-    let state = seed === null ? Math.floor(Math.random() * 0xffffffff) : this.hashSeed(seed);
-    const random = () => ((state = (state * 1664525 + 1013904223) >>> 0) / 2 ** 32);
-    const layout = createSolvableLayout(random);
-    this.initialFaces = layout.map((tile) => tile.face);
-    this.tiles = layout.map(({ face, ...position }, index) => new Tile(index, face, position, geometry));
-    this.tiles.forEach((tile) => scene.add(tile.mesh));
+    this.seedState = seed === null ? Math.floor(Math.random() * 0xffffffff) : this.hashSeed(seed);
+    this.newDeal(difficulty);
+  }
+
+  newDeal(difficulty: Difficulty = this.difficulty): void {
+    this.tiles.forEach((tile) => {
+      this.scene.remove(tile.mesh);
+      (tile.mesh.material as THREE.Material[]).forEach((material) => material.dispose());
+    });
+    this.difficulty = difficulty;
+    const random = () => ((this.seedState = (this.seedState * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+    const layout = createSolvableLayout(difficulty, random);
+    this.tiles = layout.map(({ face, ...position }, index) => new Tile(index, face, position, this.geometry));
+    this.tiles.forEach((tile) => this.scene.add(tile.mesh));
     this.refreshFreeTiles();
   }
 
@@ -46,18 +54,6 @@ export class BoardManager {
     const states = this.states();
     shuffleActiveTypes(states);
     states.forEach((state) => { if (!state.removed) this.tiles[state.id].setType(state.type); });
-    this.refreshFreeTiles();
-  }
-
-  reset(): void {
-    const states = this.states();
-    resetTiles(states, this.initialFaces);
-    this.tiles.forEach((tile, index) => {
-      tile.setType(states[index].type);
-      tile.removed = states[index].removed;
-      tile.mesh.visible = true;
-      tile.setSelected(false);
-    });
     this.refreshFreeTiles();
   }
 
