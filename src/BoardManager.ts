@@ -15,17 +15,26 @@ export class BoardManager {
   }
 
   newDeal(difficulty: Difficulty = this.difficulty): void {
+    const random = () => ((this.seedState = (this.seedState * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+    const layout = createSolvableLayout(difficulty, random);
+    const expectedCount = DIFFICULTY_TILE_COUNTS[difficulty];
+    if (layout.length !== expectedCount) throw new Error(`${difficulty} layout contains ${layout.length}/${expectedCount} tiles`);
+    const nextTiles = layout.map(({ face, ...position }, index) => new Tile(index, face, position, this.geometry));
+
+    // Build and validate the replacement first. If generation ever fails, the
+    // currently visible board remains intact instead of being replaced by [].
     this.tiles.forEach((tile) => {
       this.scene.remove(tile.mesh);
       (tile.mesh.material as THREE.Material[]).forEach((material) => material.dispose());
     });
     this.difficulty = difficulty;
-    const random = () => ((this.seedState = (this.seedState * 1664525 + 1013904223) >>> 0) / 2 ** 32);
-    const layout = createSolvableLayout(difficulty, random);
-    this.tiles = layout.map(({ face, ...position }, index) => new Tile(index, face, position, this.geometry));
+    this.tiles = nextTiles;
     this.tiles.forEach((tile) => this.scene.add(tile.mesh));
+    if (this.tileMeshCount !== expectedCount) throw new Error(`${difficulty} scene contains ${this.tileMeshCount}/${expectedCount} tile meshes`);
     this.refreshFreeTiles();
   }
+
+  get tileMeshCount(): number { return this.tiles.filter((tile) => this.scene.children.includes(tile.mesh)).length; }
 
   get activeTiles(): Tile[] { return this.tiles.filter((tile) => !tile.removed); }
 
@@ -73,3 +82,5 @@ export class BoardManager {
     return hash >>> 0;
   }
 }
+
+const DIFFICULTY_TILE_COUNTS: Record<Difficulty, number> = { easy: 48, normal: 72, hard: 96 };

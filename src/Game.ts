@@ -70,6 +70,9 @@ export class Game {
     const horizontalFov = Math.atan(Math.tan(verticalFov) * this.camera.aspect);
     const distance = Math.max(halfWidth / Math.tan(horizontalFov), halfHeight / Math.tan(verticalFov)) * 1.14 + halfDepth;
     this.camera.position.copy(center).addScaledVector(direction, distance);
+    // Keep the fitted board inside the depth range too. This matters on narrow
+    // phones where fitting a wide layout can place the camera beyond far=100.
+    this.camera.far = Math.max(100, distance + halfDepth + 10);
     this.camera.lookAt(center);
   }
 

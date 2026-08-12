@@ -81,7 +81,9 @@ test('100 seeded boards per difficulty are paired, playable, and carry a complet
       let state = seed;
       const random = () => ((state = (state * 1664525 + 1013904223) >>> 0) / 2 ** 32);
       const layout = createSolvableLayout(difficulty, random);
-      assert.equal(layout.length % 2, 0);
+      assert.equal(layout.length, positions.length);
+      assert.notEqual(layout.length, 0);
+      assert.equal(new Set(layout.map(({ x, y, z }) => `${x},${y},${z}`)).size, layout.length, 'coordinates must be unique');
       const counts = new Map();
       layout.forEach(({ face }) => counts.set(face, (counts.get(face) ?? 0) + 1));
       assert.ok([...counts.values()].every((count) => count % 2 === 0));
@@ -104,4 +106,24 @@ test('100 seeded boards per difficulty are paired, playable, and carry a complet
   assert.equal(DIFFICULTIES.hard.positions.length, 96);
   assert.ok(averageFree.easy > averageFree.normal && averageFree.normal > averageFree.hard,
     `expected easy > normal > hard, got ${JSON.stringify(averageFree)}`);
+});
+
+test('all 100 seeded hard deals contain 96 unique tiles and a complete legal solution', () => {
+  const positions = DIFFICULTIES.hard.positions;
+  assert.equal(positions.length, 96);
+  for (let seed = 1; seed <= 100; seed++) {
+    let state = seed;
+    const random = () => ((state = (state * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+    const layout = createSolvableLayout('hard', random);
+    assert.equal(layout.length, 96);
+    assert.equal(new Set(layout.map(({ x, y, z }) => `${x},${y},${z}`)).size, 96);
+    const tiles = layout.map(({ face: type, ...position }, id) => ({ id, type, ...position, removed: false }));
+    assert.ok(getAvailablePairs(tiles).length >= 1, `seed ${seed} must start with a free pair`);
+
+    state = seed;
+    for (const [first, second] of findSolvableRemovalOrder(positions, random)) {
+      assert.equal(removePair(tiles[first], tiles[second], tiles), true, `seed ${seed} solution must remain legal`);
+    }
+    assert.equal(isClear(tiles), true);
+  }
 });
