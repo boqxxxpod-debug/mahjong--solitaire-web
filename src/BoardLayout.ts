@@ -17,37 +17,36 @@ const rectangle = (columns: number, rows: number, z: number): TilePosition[] =>
       z,
     }))).flat();
 
-/** Compact, stepped layouts keep the footprint at eight tiles on phones. */
+// Five columns is the deliberate smartphone width budget. Building upward,
+// rather than extending the table sideways, lets an individual tile occupy
+// roughly twice as many screen pixels as the previous 10–12-column boards.
 export const EASY_POSITIONS: readonly TilePosition[] = [
-  ...rectangle(8, 4, 0),
-  ...rectangle(6, 2, 1),
+  ...rectangle(5, 4, 0),
+  ...rectangle(4, 3, 1),
   ...rectangle(2, 2, 2),
 ];
 
 export const NORMAL_POSITIONS: readonly TilePosition[] = [
-  ...rectangle(8, 5, 0),
-  ...rectangle(6, 4, 1),
+  ...rectangle(5, 4, 0),
+  ...rectangle(4, 3, 1),
   ...rectangle(4, 2, 2),
+  ...rectangle(2, 2, 3),
 ];
 
-/**
- * Smartphone-first turtle layout: 48 + 28 + 16 + 4 = 96 tiles.
- * Each successive rectangle is centred over the one below it, producing a
- * compact footprint instead of the former rows that were almost twice as
- * wide as they were deep.
- */
+/** A narrow five-storey tower: difficulty comes from depth, not tiny tiles. */
 export const HARD_POSITIONS: readonly TilePosition[] = [
-  ...rectangle(8, 6, 0),
-  ...rectangle(7, 4, 1),
+  ...rectangle(4, 4, 0),
+  ...rectangle(4, 4, 1),
   ...rectangle(4, 4, 2),
-  ...rectangle(2, 2, 3),
+  ...rectangle(3, 2, 3),
+  ...rectangle(3, 2, 4),
 ];
 
 export const TILE_FACES = ['east', 'south', 'west', 'north', 'plum', 'orchid', 'bamboo', 'circle', 'character', 'green', 'white', 'one', 'two', 'three', 'four', 'red', 'dragon', 'season'] as const;
 
 /**
  * The guaranteed Hard deal. The recorded removal pairs are a complete legal
- * solution for this four-layer geometry.
+ * solution for this five-layer geometry.
  */
 export const HARD_FALLBACK_LAYOUT: readonly TileLayout[] = (() => {
   const removalPairs = findSolvableRemovalOrder(HARD_POSITIONS, () => 0.5);
@@ -84,7 +83,7 @@ export function createSolvableLayout(difficulty: Difficulty = 'normal', random: 
     throw new Error(`${difficulty} board has invalid or duplicate positions`);
   }
 
-  // Hard is deliberately built from a fixed, known-playable 96-position shape.
+  // Hard is deliberately built from a fixed, known-playable tower.
   // Avoid running the generic backtracking solver on its much larger search
   // space; even a hostile/broken random source still returns the safe layout.
   if (difficulty === 'hard') {

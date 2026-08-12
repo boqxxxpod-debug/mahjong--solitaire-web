@@ -1,25 +1,41 @@
 import { expect, test } from '@playwright/test';
 import { PNG } from 'pngjs';
 
-for (const [difficulty, count] of [['EASY', '48'], ['NORMAL', '72'], ['HARD', '96']] as const) {
-  test(`${difficulty} fits the 390x844 smartphone viewport`, async ({ page }) => {
+for (const [difficulty, count] of [['EASY', '36'], ['NORMAL', '44'], ['HARD', '60']] as const) {
+  test(`${difficulty} fills the 390x844 play area with large tiles`, async ({ page }) => {
     await page.goto(`/?seed=${difficulty.toLowerCase()}-mobile-layout`);
     await page.getByRole('button', { name: difficulty }).click();
     await expect(page.locator('#remaining')).toHaveText(count);
     await expect(page.locator('#game-canvas')).toHaveCSS('width', '390px');
     await expect(page.locator('#game-canvas')).toHaveCSS('height', '844px');
+    await page.waitForTimeout(500);
+    const tileBounds = await page.evaluate(() => {
+      const game = (window as Window & { __mahjongGameTest?: any }).__mahjongGameTest;
+      const tile = game.board.tiles.reduce((top: any, candidate: any) =>
+        candidate.logical.z > top.logical.z ? candidate : top);
+      tile.mesh.geometry.computeBoundingBox();
+      const { min, max } = tile.mesh.geometry.boundingBox;
+      const points = [min.x, max.x].flatMap((x) => [min.y, max.y].flatMap((y) => [min.z, max.z].map((z) => {
+        const projected = tile.mesh.localToWorld(min.clone().set(x, y, z)).project(game.camera);
+        return { x: (projected.x + 1) * 195, y: (1 - projected.y) * 422 };
+      })));
+      const xs = points.map(({ x }) => x), ys = points.map(({ y }) => y);
+      return { width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
+    });
+    expect(tileBounds.width).toBeGreaterThan(60);
+    expect(tileBounds.height).toBeGreaterThan(60);
     await page.screenshot({ path: `screenshots/${difficulty.toLowerCase()}-390x844.png`, fullPage: true });
   });
 }
 
-test('Hard renders a 96-tile board at a smartphone viewport', async ({ page }) => {
+test('Hard renders a 60-tile board at a smartphone viewport', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/?seed=hard-mobile-check');
   await page.getByRole('button', { name: 'HARD' }).click();
 
   await expect(page.locator('#difficulty')).toHaveText('HARD');
-  await expect(page.locator('#remaining')).toHaveText('96');
+  await expect(page.locator('#remaining')).toHaveText('60');
   await expect(page.locator('#game-canvas')).toBeVisible();
   await page.waitForTimeout(500);
   expect(errors).toEqual([]);
@@ -28,8 +44,8 @@ test('Hard renders a 96-tile board at a smartphone viewport', async ({ page }) =
     __mahjongBoardDiagnostics?: Record<string, number | string>;
   }).__mahjongBoardDiagnostics);
   expect(diagnostics).toMatchObject({
-    difficulty: 'hard', layoutCount: 96, tileDefinitionCount: 96,
-    boardTileCount: 96, tileMeshCount: 96,
+    difficulty: 'hard', layoutCount: 60, tileDefinitionCount: 60,
+    boardTileCount: 60, tileMeshCount: 60,
   });
 
   const canvasImage = PNG.sync.read(await page.locator('#game-canvas').screenshot());
@@ -46,11 +62,11 @@ test('Hard remains visible through every difficulty transition', async ({ page }
   await page.goto('/?seed=hard-transition-check');
   for (const sequence of [['EASY', 'HARD'], ['NORMAL', 'HARD'], ['HARD', 'EASY', 'HARD']]) {
     for (const difficulty of sequence) await page.getByRole('button', { name: difficulty }).click();
-    await expect(page.locator('#remaining')).toHaveText('96');
+    await expect(page.locator('#remaining')).toHaveText('60');
     const diagnostics = await page.evaluate(() => (window as Window & {
       __mahjongBoardDiagnostics?: { tileMeshCount: number; boardTileCount: number };
     }).__mahjongBoardDiagnostics);
-    expect(diagnostics).toMatchObject({ tileMeshCount: 96, boardTileCount: 96 });
+    expect(diagnostics).toMatchObject({ tileMeshCount: 60, boardTileCount: 60 });
   }
 });
 

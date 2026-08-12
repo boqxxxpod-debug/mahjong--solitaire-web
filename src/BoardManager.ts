@@ -124,4 +124,4 @@ export class BoardManager {
   }
 }
 
-const DIFFICULTY_TILE_COUNTS: Record<Difficulty, number> = { easy: 48, normal: 72, hard: 96 };
+const DIFFICULTY_TILE_COUNTS: Record<Difficulty, number> = { easy: 36, normal: 44, hard: 60 };

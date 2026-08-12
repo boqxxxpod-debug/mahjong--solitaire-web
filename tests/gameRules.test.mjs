@@ -38,8 +38,8 @@ test('difficulty controls face-down counts without changing tile information', (
   const normal = createFaceDownFlags(DIFFICULTIES.normal.positions, 'normal', () => 0.5);
   const hard = createFaceDownFlags(DIFFICULTIES.hard.positions, 'hard', () => 0.5);
   assert.equal(easy.filter(Boolean).length, 0);
-  assert.ok(normal.filter(Boolean).length >= 8 && normal.filter(Boolean).length <= 11);
-  assert.ok(hard.filter(Boolean).length >= 19 && hard.filter(Boolean).length <= 24);
+  assert.equal(normal.filter(Boolean).length, 6);
+  assert.equal(hard.filter(Boolean).length, 14);
   assert.ok(hard.filter(Boolean).length > normal.filter(Boolean).length);
 });
 test('normal and hard prioritize visible face-down tiles including a free tile', () => {
@@ -81,8 +81,8 @@ function assertSolvable(types, order) {
   }
   assert.equal(isClear(tiles), true);
 }
-test('generated 72-tile deals always have a complete legal solution', () => {
-  assert.equal(COMPACT_POSITIONS.length, 72);
+test('generated normal deals always have a complete legal solution', () => {
+  assert.equal(COMPACT_POSITIONS.length, 44);
   for (let seed = 1; seed <= 40; seed++) {
     let state = seed;
     const random = () => ((state = (state * 1664525 + 1013904223) >>> 0) / 2 ** 32);
@@ -134,43 +134,40 @@ test('100 seeded boards per difficulty are paired, playable, and carry a complet
     assert.ok(freeTotal / 100 > 1, `${difficulty} must expose playable edge tiles`);
     assert.ok(freeTotal / 100 < positions.length, `${difficulty} must retain blocked tiles`);
   }
-  assert.equal(DIFFICULTIES.easy.positions.length, 48);
-  assert.equal(DIFFICULTIES.normal.positions.length, 72);
-  assert.equal(DIFFICULTIES.hard.positions.length, 96);
+  assert.equal(DIFFICULTIES.easy.positions.length, 36);
+  assert.equal(DIFFICULTIES.normal.positions.length, 44);
+  assert.equal(DIFFICULTIES.hard.positions.length, 60);
 });
 
 test('difficulty layouts stay compact and become progressively more layered', () => {
-  const expected = { easy: { count: 48, layers: 3 }, normal: { count: 72, layers: 3 }, hard: { count: 96, layers: 4 } };
+  const expected = { easy: { count: 36, layers: 3 }, normal: { count: 44, layers: 4 }, hard: { count: 60, layers: 5 } };
   for (const [difficulty, metrics] of Object.entries(expected)) {
     const positions = DIFFICULTIES[difficulty].positions;
     assert.equal(positions.length, metrics.count);
     assert.equal(new Set(positions.map(({ z }) => z)).size, metrics.layers);
-    assert.ok(Math.max(...positions.map(({ x }) => x)) - Math.min(...positions.map(({ x }) => x)) <= 14,
-      `${difficulty} footprint must be no wider than eight tile columns`);
+    assert.ok(Math.max(...positions.map(({ x }) => x)) - Math.min(...positions.map(({ x }) => x)) <= 8,
+      `${difficulty} footprint must be no wider than five tile columns`);
   }
 });
 
-test('hard uses a compact four-layer 48/28/16/4 turtle', () => {
+test('hard uses a narrow five-layer 16/16/16/6/6 tower', () => {
   const positions = DIFFICULTIES.hard.positions;
-  assert.deepEqual([0, 1, 2, 3].map((z) => positions.filter((tile) => tile.z === z).length), [48, 28, 16, 4]);
+  assert.deepEqual([0, 1, 2, 3, 4].map((z) => positions.filter((tile) => tile.z === z).length), [16, 16, 16, 6, 6]);
   const width = Math.max(...positions.map(({ x }) => x)) - Math.min(...positions.map(({ x }) => x)) + 2;
   const depth = Math.max(...positions.map(({ y }) => y)) - Math.min(...positions.map(({ y }) => y)) + 2;
   assert.ok(width / depth >= 1 && width / depth <= 1.5, `hard footprint must be near-square, got ${width}:${depth}`);
-  for (let z = 1; z <= 3; z++) {
-    const layer = positions.filter((tile) => tile.z === z);
-    assert.ok(Math.max(...layer.map(({ x }) => Math.abs(x))) < Math.max(...positions.filter((tile) => tile.z === z - 1).map(({ x }) => Math.abs(x))));
-  }
+  assert.equal(width, 8, 'hard must remain only four tiles wide');
 });
 
-test('all 100 seeded hard deals contain 96 unique tiles and a complete legal solution', () => {
+test('all 100 seeded hard deals contain 60 unique tiles and a complete legal solution', () => {
   const positions = DIFFICULTIES.hard.positions;
-  assert.equal(positions.length, 96);
+  assert.equal(positions.length, 60);
   for (let seed = 1; seed <= 100; seed++) {
     let state = seed;
     const random = () => ((state = (state * 1664525 + 1013904223) >>> 0) / 2 ** 32);
     const layout = createSolvableLayout('hard', random);
-    assert.equal(layout.length, 96);
-    assert.equal(new Set(layout.map(({ x, y, z }) => `${x},${y},${z}`)).size, 96);
+    assert.equal(layout.length, 60);
+    assert.equal(new Set(layout.map(({ x, y, z }) => `${x},${y},${z}`)).size, 60);
     const tiles = layout.map(({ face: type, ...position }, id) => ({ id, type, ...position, removed: false }));
     assert.ok(getAvailablePairs(tiles).length >= 1, `seed ${seed} must start with a free pair`);
 
