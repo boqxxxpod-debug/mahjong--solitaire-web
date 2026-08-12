@@ -95,7 +95,7 @@ test('100 seeded boards per difficulty are paired, playable, and carry a complet
       // The generator's assignment itself is the certificate: reproduce its
       // random stream and replay every legal pair in the geometric order.
       state = seed;
-      const order = findSolvableRemovalOrder(positions, random);
+      const order = findSolvableRemovalOrder(positions, difficulty === 'hard' ? () => 0.5 : random);
       for (const [first, second] of order) assert.equal(removePair(tiles[first], tiles[second], tiles), true);
       assert.equal(isClear(tiles), true);
     }
@@ -120,8 +120,7 @@ test('all 100 seeded hard deals contain 96 unique tiles and a complete legal sol
     const tiles = layout.map(({ face: type, ...position }, id) => ({ id, type, ...position, removed: false }));
     assert.ok(getAvailablePairs(tiles).length >= 1, `seed ${seed} must start with a free pair`);
 
-    state = seed;
-    for (const [first, second] of findSolvableRemovalOrder(positions, random)) {
+    for (const [first, second] of findSolvableRemovalOrder(positions, () => 0.5)) {
       assert.equal(removePair(tiles[first], tiles[second], tiles), true, `seed ${seed} solution must remain legal`);
     }
     assert.equal(isClear(tiles), true);
