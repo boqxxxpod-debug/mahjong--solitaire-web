@@ -24,6 +24,23 @@ for (const [difficulty, count] of [['EASY', '36'], ['NORMAL', '44'], ['HARD', '6
     });
     expect(tileBounds.width).toBeGreaterThan(60);
     expect(tileBounds.height).toBeGreaterThan(60);
+
+    // Tap the rendered centre of a highest-layer FREE face-up tile. This
+    // guards the visual projection and InputController raycast from drifting
+    // apart when the physical row/layer offsets change.
+    const tapTarget = await page.evaluate(() => {
+      const game = (window as Window & { __mahjongGameTest?: any }).__mahjongGameTest;
+      const tile = game.board.tiles
+        .filter((candidate: any) => !candidate.faceDown && game.board.isFree(candidate))
+        .sort((first: any, second: any) => second.logical.z - first.logical.z)[0];
+      const projected = tile.mesh.position.clone().project(game.camera);
+      return { id: tile.id, x: (projected.x + 1) * 195, y: (1 - projected.y) * 422 };
+    });
+    await page.mouse.click(tapTarget.x, tapTarget.y);
+    await expect.poll(() => page.evaluate((id) => {
+      const game = (window as Window & { __mahjongGameTest?: any }).__mahjongGameTest;
+      return game.board.tiles[id].selected;
+    }, tapTarget.id)).toBe(true);
     await page.screenshot({ path: `screenshots/${difficulty.toLowerCase()}-390x844.png`, fullPage: true });
   });
 }
