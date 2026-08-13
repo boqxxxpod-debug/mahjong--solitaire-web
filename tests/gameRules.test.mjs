@@ -86,7 +86,7 @@ test('state search classifies legal but permanently unproductive reveals as DEAD
   const tiles = row(['a', 'x', 'y', 'b']);
   for (const tile of [tiles[0], tiles[3]]) tile.faceDown = tile.originallyFaceDown = true;
   const result = analyzeBoard(tiles);
-  assert.equal(result.status, 'DEAD_END');
+  assert.equal(result.status, 'UNSOLVABLE');
   assert.equal(result.canRemovePair, false);
   assert.ok(result.cycleStates > 0, 'canonical visited states stop reveal A/B/A loops');
 });
@@ -100,7 +100,7 @@ test('state search sees progress after one or multiple reveals and finds a clear
   const multipleSteps = row(['a', 'b', 'b', 'a']);
   multipleSteps[1].faceDown = multipleSteps[1].originallyFaceDown = true;
   const result = analyzeBoard(multipleSteps);
-  assert.equal(result.status, 'PROGRESS_POSSIBLE');
+  assert.equal(result.status, 'SOLVABLE');
   assert.equal(result.solvable, true);
   assert.equal(result.removalPairs, 2);
 });
@@ -269,4 +269,18 @@ test('all 100 seeded hard deals contain 60 unique tiles and a complete legal sol
     }
     assert.equal(isClear(tiles), true);
   }
+});
+
+test('node exhaustion is UNKNOWN and never UNSOLVABLE', () => {
+  const tiles = row(['a', 'b', 'b', 'a']);
+  const result = analyzeBoard(tiles, 1);
+  assert.equal(result.status, 'UNKNOWN');
+  assert.equal(result.solvable, false);
+});
+
+test('a legal pair can remain on an exhaustively proven unsolvable board', () => {
+  const tiles = ['a', 'a', 'b', 'c'].map((type, id) => ({ id, type, x: id * 4, y: 0, z: 0, removed: false }));
+  const result = analyzeBoard(tiles);
+  assert.equal(hasAvailablePair(tiles), true);
+  assert.equal(result.status, 'UNSOLVABLE');
 });

@@ -58,7 +58,7 @@ export class BoardManager {
 
   get activeTiles(): Tile[] { return this.tiles.filter((tile) => !tile.removed); }
 
-  private states(): TileState[] {
+  states(): TileState[] {
     return this.tiles.map((tile) => ({
       id: tile.id, type: tile.type, ...tile.logical, removed: tile.removed,
       faceDown: tile.faceDown, originallyFaceDown: tile.originallyFaceDown,
@@ -79,6 +79,16 @@ export class BoardManager {
 
   /** Accurate dead-end check for UI consumers; bounded to protect a frame. */
   analyzeProgress() { return analyzeBoard(this.states(), 50_000); }
+
+  restore(states: readonly TileState[]): void {
+    if (states.length !== this.tiles.length) throw new Error('Snapshot does not match board');
+    states.forEach((state, index) => {
+      const tile = this.tiles[index];
+      tile.removed = state.removed; tile.mesh.visible = !state.removed; tile.setSelected(false);
+      tile.setType(state.type); tile.setFaceDown(Boolean(state.faceDown));
+    });
+    this.refreshFreeTiles();
+  }
 
   getHint(): AvailableAction<Tile> | null {
     const action = getAvailableActions(this.states())[0];

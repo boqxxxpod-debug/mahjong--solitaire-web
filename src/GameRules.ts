@@ -15,7 +15,7 @@ export type AvailableAction<T = TileState> =
   | { kind: 'pair'; tiles: readonly [T, T] }
   | { kind: 'reveal'; tile: T };
 
-export type SearchStatus = 'CLEAR' | 'PROGRESS_POSSIBLE' | 'DEAD_END' | 'UNSOLVABLE';
+export type SearchStatus = 'CLEAR' | 'SOLVABLE' | 'UNSOLVABLE' | 'UNKNOWN';
 export interface SearchResult {
   status: SearchStatus;
   solvable: boolean;
@@ -87,10 +87,10 @@ export function analyzeBoard(initial: readonly TileState[], nodeLimit = 1_000_00
   let initialRevealed = -1;
   for (const tile of tiles) if (originalHidden.has(tile.id) && tile.faceDown === false) initialRevealed = tile.id;
   const visited = new Set<string>();
-  let cycles = 0, maxDepth = 0, bestRemaining = initiallyActive, solutionPairs = 0, solutionReveals = 0;
+  let cycles = 0, maxDepth = 0, bestRemaining = initiallyActive, solutionPairs = 0, solutionReveals = 0, limitReached = false;
 
   const visit = (removed: Set<number>, revealed: number, depth: number, pairs: number, reveals: number): boolean => {
-    if (visited.size >= nodeLimit) return false;
+    if (visited.size >= nodeLimit) { limitReached = true; return false; }
     const key = `${[...removed].sort((a, b) => a - b).join(',')}|${revealed}`;
     if (visited.has(key)) { cycles++; return false; }
     visited.add(key); maxDepth = Math.max(maxDepth, depth);
@@ -114,7 +114,7 @@ export function analyzeBoard(initial: readonly TileState[], nodeLimit = 1_000_00
   const solvable = visit(removed, initialRevealed, 0, 0, 0);
   const canRemovePair = bestRemaining < initiallyActive;
   return {
-    status: initiallyActive === 0 ? 'CLEAR' : solvable ? 'PROGRESS_POSSIBLE' : canRemovePair ? 'UNSOLVABLE' : 'DEAD_END',
+    status: initiallyActive === 0 ? 'CLEAR' : solvable ? 'SOLVABLE' : limitReached ? 'UNKNOWN' : 'UNSOLVABLE',
     solvable, canRemovePair, visitedStates: visited.size, cycleStates: cycles, maxDepth,
     removalPairs: solutionPairs, revealMoves: solutionReveals,
   };
