@@ -4,13 +4,9 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
 
 permissions:
   contents: read
-  pull-requests: read
   pages: write
   id-token: write
 
@@ -20,14 +16,6 @@ concurrency:
 
 jobs:
   deploy:
-    if: >-
-      github.event_name != 'workflow_run' ||
-      (
-        github.event.workflow_run.conclusion == 'success' &&
-        startsWith(github.event.workflow_run.head_branch, 'codex/') &&
-        github.event.workflow_run.pull_requests[0].number != null
-      )
-
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -35,28 +23,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Wait for Codex PR merge
-        if: github.event_name == 'workflow_run'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          PR: ${{ github.event.workflow_run.pull_requests[0].number }}
-        run: |
-          for attempt in {1..36}; do
-            merged_at="$(gh api "repos/$REPO/pulls/$PR" --jq '.merged_at // empty')"
-            if [ -n "$merged_at" ]; then
-              echo "PR #$PR is merged."
-              exit 0
-            fi
-            sleep 10
-          done
-
-          echo "PR #$PR was not merged within six minutes."
-          exit 1
-
       - uses: actions/checkout@v4
-        with:
-          ref: main
 
       - uses: actions/setup-node@v4
         with:
