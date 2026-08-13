@@ -2,7 +2,7 @@ import { BoardManager } from './BoardManager';
 import { Tile } from './Tile';
 import { UIManager } from './UIManager';
 import { DIFFICULTIES, Difficulty } from './BoardLayout';
-import type { SearchResult, TileState } from './GameRules';
+import type { CertifiedShuffleResult, SearchResult, TileState } from './GameRules';
 
 interface Snapshot { tiles: TileState[]; moves: number; history: Array<{ tiles: TileState[]; moves: number }> }
 
@@ -20,6 +20,7 @@ export class MatchManager {
   private history: Array<{ tiles: TileState[]; moves: number }> = [];
   private checkingTimer?: number;
   private searchTimer?: number;
+  private shuffling = false;
 
   constructor(private readonly board: BoardManager, private readonly ui: UIManager) {
     this.ui.onRestart(() => this.restart()); this.ui.onHint(() => this.hint());
@@ -76,10 +77,44 @@ export class MatchManager {
   }
 
   private shuffle(): void {
-    if (this.shuffles === 0) return;
-    this.recordHistory(); this.selected?.setSelected(false); this.selected = null; this.board.shuffle(); this.stuck = false;
-    if (this.shuffles !== null) this.shuffles--; this.ui.updateDifficulty(this.board.difficulty, this.hints, this.shuffles);
-    this.ui.hideResult(); this.ui.showMessage('シャッフル後のクリア可能性を確認しています'); this.checkProgress();
+    if (this.shuffles === 0 || this.shuffling) return;
+    this.invalidateSearch();
+    const revision = ++this.revision, before = this.snapshot();
+    const worker = new Worker(new URL('./solver.worker.ts', import.meta.url), { type: 'module' }); this.worker = worker;
+    this.shuffling = true; this.ui.setShuffling(true, this.board.difficulty, this.hints, this.shuffles);
+    this.checkingTimer = window.setTimeout(() => { if (revision === this.revision) this.ui.showMessage('SHUFFLING...'); }, 120);
+    this.searchTimer = window.setTimeout(() => {
+      if (revision !== this.revision) return;
+      worker.terminate(); this.worker = undefined;
+      this.finishShuffle(revision, before, { status: 'FAILED', attempts: 24, rejectedUnsolvable: 0, rejectedUnknown: 1 });
+    }, 5000);
+    worker.onmessage = ({ data }: MessageEvent<{ revision: number; result: CertifiedShuffleResult }>) => {
+      if (data.revision !== revision || revision !== this.revision) return;
+      window.clearTimeout(this.searchTimer); worker.terminate(); this.worker = undefined;
+      this.finishShuffle(revision, before, data.result);
+    };
+    worker.onerror = () => {
+      if (revision !== this.revision) return;
+      window.clearTimeout(this.searchTimer); worker.terminate(); this.worker = undefined;
+      this.finishShuffle(revision, before, { status: 'FAILED', attempts: 0, rejectedUnsolvable: 0, rejectedUnknown: 1 });
+    };
+    worker.postMessage({ kind: 'shuffle', revision, tiles: before.tiles, nodeLimit: 1_000_000, maxAttempts: 24,
+      seed: (revision * 2654435761) >>> 0 });
+  }
+
+  private finishShuffle(revision: number, before: Snapshot, result: CertifiedShuffleResult): void {
+    if (revision !== this.revision) return;
+    window.clearTimeout(this.checkingTimer); this.shuffling = false;
+    if (result.status !== 'SOLVABLE' || !result.tiles) {
+      this.ui.setShuffling(false, this.board.difficulty, this.hints, this.shuffles);
+      this.ui.showMessage('安全な配置を作れませんでした。もう一度お試しください', true); return;
+    }
+    // The only commit point: board, history and counter advance together after certification.
+    this.selected?.setSelected(false); this.selected = null; this.revealedFaceDownTile = null;
+    this.board.restore(result.tiles); this.history.push({ tiles: before.tiles, moves: before.moves });
+    if (this.shuffles !== null) this.shuffles--; this.stuck = false;
+    this.ui.setShuffling(false, this.board.difficulty, this.hints, this.shuffles);
+    this.ui.hideResult(); this.ui.showMessage('安全な配置へシャッフルしました'); this.checkProgress();
   }
 
   private async revealFaceDown(tile: Tile): Promise<void> {
@@ -119,7 +154,7 @@ export class MatchManager {
       if (data.revision !== this.revision || data.revision !== revision) return;
       window.clearTimeout(this.searchTimer); worker.terminate(); this.worker = undefined; this.applySearchResult(revision, candidate, data.result);
     };
-    worker.postMessage({ revision, tiles: candidate.tiles, nodeLimit: 1_000_000 });
+    worker.postMessage({ kind: 'analyze', revision, tiles: candidate.tiles, nodeLimit: 1_000_000 });
   }
 
   private applySearchResult(revision: number, candidate: Snapshot, result: SearchResult): void {
@@ -132,5 +167,6 @@ export class MatchManager {
   private invalidateSearch(): void {
     this.revision++; this.worker?.terminate(); this.worker = undefined;
     window.clearTimeout(this.checkingTimer); window.clearTimeout(this.searchTimer);
+    if (this.shuffling) { this.shuffling = false; this.ui.setShuffling(false, this.board.difficulty, this.hints, this.shuffles); }
   }
 }

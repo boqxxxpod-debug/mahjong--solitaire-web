@@ -27,6 +27,14 @@ export interface SearchResult {
   revealMoves: number;
 }
 
+export interface CertifiedShuffleResult {
+  status: 'SOLVABLE' | 'FAILED';
+  tiles?: TileState[];
+  attempts: number;
+  rejectedUnsolvable: number;
+  rejectedUnknown: number;
+}
+
 export function isFreeTile(tile: TileState, tiles: readonly TileState[]): boolean {
   if (tile.removed) return false;
   const active = tiles.filter((other) => !other.removed && other.id !== tile.id);
@@ -256,4 +264,24 @@ export function shuffleActiveTypes(tiles: TileState[], random: RandomSource = Ma
   const positions = active.map(({ x, y, z }) => ({ x, y, z }));
   const types = generateSolvableTypes(positions, faces, random);
   active.forEach((tile, index) => { tile.type = types[index]; });
+}
+
+/**
+ * Builds shuffle candidates away from the live board and returns only a board
+ * which the complete rules search has certified. The input is never mutated.
+ */
+export function createCertifiedShuffle(
+  source: readonly TileState[], seed: number, maxAttempts = 24, nodeLimit = 1_000_000,
+): CertifiedShuffleResult {
+  let state = seed >>> 0;
+  const random = () => ((state = (Math.imul(state, 1664525) + 1013904223) >>> 0) / 2 ** 32);
+  let rejectedUnsolvable = 0, rejectedUnknown = 0;
+  for (let attempts = 1; attempts <= maxAttempts; attempts++) {
+    const candidate = source.map((tile) => ({ ...tile }));
+    shuffleActiveTypes(candidate, random);
+    const result = analyzeBoard(candidate, nodeLimit);
+    if (result.status === 'SOLVABLE') return { status: 'SOLVABLE', tiles: candidate, attempts, rejectedUnsolvable, rejectedUnknown };
+    if (result.status === 'UNKNOWN') rejectedUnknown++; else rejectedUnsolvable++;
+  }
+  return { status: 'FAILED', attempts: maxAttempts, rejectedUnsolvable, rejectedUnknown };
 }
