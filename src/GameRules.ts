@@ -20,8 +20,7 @@ export type SolverAction =
   | { kind: 'reveal'; tileId: number };
 
 export type SearchStatus = 'CLEAR' | 'SOLVABLE' | 'UNSOLVABLE' | 'UNKNOWN';
-export interface SearchResult {
-  status: SearchStatus;
+interface SearchResultBase {
   solvable: boolean;
   canRemovePair: boolean;
   visitedStates: number;
@@ -29,9 +28,10 @@ export interface SearchResult {
   maxDepth: number;
   removalPairs: number;
   revealMoves: number;
-  stateHash: string;
-  actions: SolverAction[];
 }
+export type SearchResult =
+  | (SearchResultBase & { status: 'SOLVABLE'; solvable: true; stateHash: string; actions: SolverAction[] })
+  | (SearchResultBase & { status: 'CLEAR' | 'UNSOLVABLE' | 'UNKNOWN'; stateHash?: string; actions?: SolverAction[] });
 
 export interface CertifiedShuffleResult {
   status: 'SOLVABLE' | 'FAILED';
@@ -155,11 +155,12 @@ export function analyzeBoard(
   const solvable = visit(removed, initialRevealed, 0, 0, 0);
   const canRemovePair = bestRemaining < initiallyActive;
   const status: SearchStatus = initiallyActive === 0 ? 'CLEAR' : solvable ? 'SOLVABLE' : limitReached ? 'UNKNOWN' : 'UNSOLVABLE';
-  return {
-    status, solvable, canRemovePair, visitedStates: visited.size, cycleStates: cycles, maxDepth,
-    removalPairs: solutionPairs, revealMoves: solutionReveals, stateHash: initialHash,
-    actions: status === 'SOLVABLE' ? solutionActions : [],
+  const base: SearchResultBase = {
+    solvable, canRemovePair, visitedStates: visited.size, cycleStates: cycles, maxDepth,
+    removalPairs: solutionPairs, revealMoves: solutionReveals,
   };
+  if (status === 'SOLVABLE') return { ...base, status, solvable: true, stateHash: initialHash, actions: solutionActions };
+  return { ...base, status, stateHash: initialHash, actions: [] };
 }
 
 function findRevealLeadingToPair<T extends TileState>(tiles: readonly T[]): T | null {
