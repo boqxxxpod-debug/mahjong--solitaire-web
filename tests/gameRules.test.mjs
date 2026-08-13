@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyzeBoard, createFaceDownFlags, findSolvableRemovalOrder, generateSolvableTypes, getAvailableActions, getAvailablePairs, hasAvailableAction, hasAvailablePair, isClear, isFreeTile, isStuck, isTileUncovered, removePair, resetTiles, shuffleActiveTypes } from '../.test-dist/GameRules.js';
+import { analyzeBoard, createCertifiedShuffle, createFaceDownFlags, findSolvableRemovalOrder, generateSolvableTypes, getAvailableActions, getAvailablePairs, hasAvailableAction, hasAvailablePair, isClear, isFreeTile, isStuck, isTileUncovered, removePair, resetTiles, shuffleActiveTypes } from '../.test-dist/GameRules.js';
 import { COMPACT_LAYOUT, COMPACT_POSITIONS, TILE_PAIR_FACES, DIFFICULTIES, createSolvableDeal, createSolvableLayout } from '../.test-dist/BoardLayout.js';
 
 const row = (types) => types.map((type, id) => ({ id, type, x: id * 2, y: 0, z: 0, removed: false }));
@@ -276,6 +276,26 @@ test('node exhaustion is UNKNOWN and never UNSOLVABLE', () => {
   const result = analyzeBoard(tiles, 1);
   assert.equal(result.status, 'UNKNOWN');
   assert.equal(result.solvable, false);
+});
+
+test('certified shuffle is isolated, preserves the multiset, and commits only SOLVABLE', () => {
+  const tiles = row(['a', 'a', 'b', 'b']);
+  const original = structuredClone(tiles);
+  const result = createCertifiedShuffle(tiles, 37, 20, 10000);
+  assert.equal(result.status, 'SOLVABLE');
+  assert.deepEqual(tiles, original, 'candidate generation must not mutate the live snapshot');
+  assert.equal(analyzeBoard(result.tiles, 10000).status, 'SOLVABLE');
+  assert.deepEqual(result.tiles.map((tile) => tile.type).sort(), original.map((tile) => tile.type).sort());
+  assert.deepEqual(result.tiles.map(({ id, x, y, z, removed, faceDown, originallyFaceDown }) => ({ id, x, y, z, removed, faceDown, originallyFaceDown })),
+    original.map(({ id, x, y, z, removed, faceDown, originallyFaceDown }) => ({ id, x, y, z, removed, faceDown, originallyFaceDown })));
+});
+
+test('UNKNOWN shuffle candidates are rejected without returning a board', () => {
+  const tiles = row(['a', 'a', 'b', 'b']);
+  const original = structuredClone(tiles);
+  const result = createCertifiedShuffle(tiles, 9, 3, 0);
+  assert.deepEqual(result, { status: 'FAILED', attempts: 3, rejectedUnsolvable: 0, rejectedUnknown: 3 });
+  assert.deepEqual(tiles, original);
 });
 
 test('a legal pair can remain on an exhaustively proven unsolvable board', () => {

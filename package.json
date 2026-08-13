@@ -10,7 +10,8 @@
     "test:e2e": "playwright test",
     "validate:seeds": "rm -rf .test-dist && tsc src/GameRules.ts src/BoardLayout.ts --outDir .test-dist --target ES2022 --module ES2022 --moduleResolution bundler --skipLibCheck && node tests/seed-validation.mjs --count=${SEED_COUNT:-10000} ${BENCHMARK_OUTPUT:+--output=$BENCHMARK_OUTPUT}; status=$?; rm -rf .test-dist; exit $status",
     "preview": "vite preview --host 0.0.0.0",
-    "validate:progress": "rm -rf .test-dist && tsc src/GameRules.ts src/BoardLayout.ts --outDir .test-dist --target ES2022 --module ES2022 --moduleResolution bundler --skipLibCheck && node tests/progress-validation.mjs; status=$?; rm -rf .test-dist; exit $status"
+    "validate:progress": "rm -rf .test-dist && tsc src/GameRules.ts src/BoardLayout.ts --outDir .test-dist --target ES2022 --module ES2022 --moduleResolution bundler --skipLibCheck && node tests/progress-validation.mjs; status=$?; rm -rf .test-dist; exit $status",
+    "validate:shuffles": "rm -rf .test-dist && tsc src/GameRules.ts src/BoardLayout.ts --outDir .test-dist --target ES2022 --module ES2022 --moduleResolution bundler --skipLibCheck && node tests/shuffle-validation.mjs; status=$?; rm -rf .test-dist; exit $status"
   },
   "dependencies": {
     "three": "0.162.0"

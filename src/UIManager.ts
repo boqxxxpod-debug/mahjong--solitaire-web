@@ -16,6 +16,7 @@ export class UIManager {
   private startedAt = 0;
   private elapsed = 0;
   private timer?: number;
+  private shuffling = false;
 
   updateRemaining(count: number): void { this.remaining.textContent = String(count); }
   showMessage(text: string, error = false): void { this.message.textContent = text; this.message.classList.toggle('error', error); }
@@ -33,9 +34,12 @@ export class UIManager {
     this.hintButton.disabled = hints === 0;
     this.hintButton.textContent = `HINT ${hints === null ? '∞' : hints}`;
     this.shuffleButtons.forEach((button) => {
-      button.toggleAttribute('disabled', shuffles === 0);
-      button.textContent = `SHUFFLE ${shuffles === null ? '∞' : shuffles}`;
+      button.toggleAttribute('disabled', shuffles === 0 || this.shuffling);
+      button.textContent = this.shuffling ? 'SHUFFLING...' : `SHUFFLE ${shuffles === null ? '∞' : shuffles}`;
     });
+  }
+  setShuffling(active: boolean, difficulty: 'easy' | 'normal' | 'hard', hints: number | null, shuffles: number | null): void {
+    this.shuffling = active; this.updateDifficulty(difficulty, hints, shuffles);
   }
   updateMoves(count: number): void { this.moves.textContent = String(count); }
   showClear(moves: number): void {

@@ -1,7 +1,12 @@
 /// <reference lib="webworker" />
-import { analyzeBoard, TileState } from './GameRules';
+import { analyzeBoard, createCertifiedShuffle, TileState } from './GameRules';
 
-interface Request { revision: number; tiles: TileState[]; nodeLimit: number }
+type Request =
+  | { kind: 'analyze'; revision: number; tiles: TileState[]; nodeLimit: number }
+  | { kind: 'shuffle'; revision: number; tiles: TileState[]; nodeLimit: number; seed: number; maxAttempts: number };
 self.onmessage = ({ data }: MessageEvent<Request>) => {
-  self.postMessage({ revision: data.revision, result: analyzeBoard(data.tiles, data.nodeLimit) });
+  const result = data.kind === 'shuffle'
+    ? createCertifiedShuffle(data.tiles, data.seed, data.maxAttempts, data.nodeLimit)
+    : analyzeBoard(data.tiles, data.nodeLimit);
+  self.postMessage({ kind: data.kind, revision: data.revision, result });
 };
