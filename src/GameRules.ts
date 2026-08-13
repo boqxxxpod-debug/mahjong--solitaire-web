@@ -15,9 +15,12 @@ export type AvailableAction<T = TileState> =
   | { kind: 'pair'; tiles: readonly [T, T] }
   | { kind: 'reveal'; tile: T };
 
+export type SolverAction =
+  | { kind: 'pair'; firstId: number; secondId: number }
+  | { kind: 'reveal'; tileId: number };
+
 export type SearchStatus = 'CLEAR' | 'SOLVABLE' | 'UNSOLVABLE' | 'UNKNOWN';
-export interface SearchResult {
-  status: SearchStatus;
+interface SearchResultBase {
   solvable: boolean;
   canRemovePair: boolean;
   visitedStates: number;
@@ -26,6 +29,9 @@ export interface SearchResult {
   removalPairs: number;
   revealMoves: number;
 }
+export type SearchResult =
+  | (SearchResultBase & { status: 'SOLVABLE'; solvable: true; stateHash: string; actions: SolverAction[] })
+  | (SearchResultBase & { status: 'CLEAR' | 'UNSOLVABLE' | 'UNKNOWN'; stateHash?: string; actions?: SolverAction[] });
 
 export interface CertifiedShuffleResult {
   status: 'SOLVABLE' | 'FAILED';
@@ -46,7 +52,6 @@ export function isFreeTile(tile: TileState, tiles: readonly TileState[]): boolea
   return !leftBlocked || !rightBlocked;
 }
 
-/** Whether the tile's top is visible because no active tile overlaps it from above. */
 export function isTileUncovered(tile: TileState, tiles: readonly TileState[]): boolean {
   if (tile.removed) return false;
   return !tiles.some((other) => !other.removed && other.id !== tile.id && other.z > tile.z &&
@@ -63,10 +68,7 @@ export function getAvailablePairs<T extends TileState>(tiles: readonly T[]): Arr
 }
 
 export function hasAvailablePair(tiles: readonly TileState[]): boolean { return getAvailablePairs(tiles).length > 0; }
-/**
- * Returns actions which can reach removal under the one-revealed-tile rule.
- * Reveal hints are the first step of a legal path to an actual pair.
- */
+
 export function getAvailableActions<T extends TileState>(tiles: readonly T[]): Array<AvailableAction<T>> {
   const pairs = getAvailablePairs(tiles);
   if (pairs.length) return pairs.map((pair): AvailableAction<T> => ({ kind: 'pair', tiles: pair }));
@@ -75,26 +77,51 @@ export function getAvailableActions<T extends TileState>(tiles: readonly T[]): A
   return reveal ? [{ kind: 'reveal', tile: reveal }] : [];
 }
 
-/** Whether the current board can progress to removing a pair. */
 export function hasAvailableAction(tiles: readonly TileState[]): boolean {
   return getAvailableActions(tiles).length > 0;
 }
 export function isClear(tiles: readonly TileState[]): boolean { return tiles.every((tile) => tile.removed); }
 export function isStuck(tiles: readonly TileState[]): boolean { return !isClear(tiles) && !hasAvailableAction(tiles); }
 
-/**
- * Exhaustively explores the actual one-revealed-hidden-tile rules.  The
- * canonical key contains the removed set and the currently revealed original
- * hidden tile, so reveal A -> B -> A loops terminate rather than masquerading
- * as progress.
- */
-export function analyzeBoard(initial: readonly TileState[], nodeLimit = 1_000_000): SearchResult {
+export function boardStateHash(tiles: readonly TileState[]): string {
+  return [...tiles]
+    .sort((first, second) => first.id - second.id)
+    .map((tile) => [
+      tile.id,
+      tile.type,
+      tile.removed ? 1 : 0,
+      tile.removed ? '-' : tile.faceDown ? 1 : 0,
+      tile.originallyFaceDown ? 1 : 0,
+    ].join(':'))
+    .join('|');
+}
+
+export function applySolverAction(source: readonly TileState[], action: SolverAction): TileState[] | null {
+  const next = source.map((tile) => ({ ...tile }));
+  if (action.kind === 'pair') {
+    const first = next.find((tile) => tile.id === action.firstId);
+    const second = next.find((tile) => tile.id === action.secondId);
+    if (!first || !second || !removePair(first, second, next)) return null;
+    return next;
+  }
+  const tile = next.find((candidate) => candidate.id === action.tileId);
+  if (!tile || !tile.faceDown || !isFreeTile(tile, next)) return null;
+  return revealTile(tile.id, next);
+}
+
+export function analyzeBoard(
+  initial: readonly TileState[], nodeLimit = 1_000_000, avoidStateHashes: readonly string[] = [],
+): SearchResult {
   const tiles = initial.map((tile) => ({ ...tile }));
+  const initialHash = boardStateHash(tiles);
   const initiallyActive = tiles.filter((tile) => !tile.removed).length;
   const originalHidden = new Set(tiles.filter((tile) => tile.originallyFaceDown ?? tile.faceDown).map((tile) => tile.id));
   let initialRevealed = -1;
   for (const tile of tiles) if (originalHidden.has(tile.id) && tile.faceDown === false) initialRevealed = tile.id;
   const visited = new Set<string>();
+  const avoided = new Set(avoidStateHashes);
+  const path: SolverAction[] = [];
+  let solutionActions: SolverAction[] = [];
   let cycles = 0, maxDepth = 0, bestRemaining = initiallyActive, solutionPairs = 0, solutionReveals = 0, limitReached = false;
 
   const visit = (removed: Set<number>, revealed: number, depth: number, pairs: number, reveals: number): boolean => {
@@ -103,17 +130,23 @@ export function analyzeBoard(initial: readonly TileState[], nodeLimit = 1_000_00
     if (visited.has(key)) { cycles++; return false; }
     visited.add(key); maxDepth = Math.max(maxDepth, depth);
     const state = tiles.map((tile) => ({ ...tile, removed: removed.has(tile.id), faceDown: originalHidden.has(tile.id) && tile.id !== revealed }));
+    if (depth > 0 && avoided.has(boardStateHash(state))) return false;
     const remaining = state.length - removed.size;
     bestRemaining = Math.min(bestRemaining, remaining);
-    if (!remaining) { solutionPairs = pairs; solutionReveals = reveals; return true; }
+    if (!remaining) {
+      solutionPairs = pairs; solutionReveals = reveals; solutionActions = [...path]; return true;
+    }
 
     for (const [first, second] of getAvailablePairs(state)) {
       const next = new Set(removed); next.add(first.id); next.add(second.id);
+      path.push({ kind: 'pair', firstId: first.id, secondId: second.id });
       if (visit(next, revealed === first.id || revealed === second.id ? -1 : revealed, depth + 1, pairs + 1, reveals)) return true;
+      path.pop();
     }
-    // Reveals are legal even when they do not immediately make a pair.
     for (const tile of state) if (tile.faceDown && isFreeTile(tile, state)) {
+      path.push({ kind: 'reveal', tileId: tile.id });
       if (visit(removed, tile.id, depth + 1, pairs, reveals + 1)) return true;
+      path.pop();
     }
     return false;
   };
@@ -121,18 +154,15 @@ export function analyzeBoard(initial: readonly TileState[], nodeLimit = 1_000_00
   const removed = new Set(tiles.filter((tile) => tile.removed).map((tile) => tile.id));
   const solvable = visit(removed, initialRevealed, 0, 0, 0);
   const canRemovePair = bestRemaining < initiallyActive;
-  return {
-    status: initiallyActive === 0 ? 'CLEAR' : solvable ? 'SOLVABLE' : limitReached ? 'UNKNOWN' : 'UNSOLVABLE',
+  const status: SearchStatus = initiallyActive === 0 ? 'CLEAR' : solvable ? 'SOLVABLE' : limitReached ? 'UNKNOWN' : 'UNSOLVABLE';
+  const base: SearchResultBase = {
     solvable, canRemovePair, visitedStates: visited.size, cycleStates: cycles, maxDepth,
     removalPairs: solutionPairs, revealMoves: solutionReveals,
   };
+  if (status === 'SOLVABLE') return { ...base, status, solvable: true, stateHash: initialHash, actions: solutionActions };
+  return { ...base, status, stateHash: initialHash, actions: [] };
 }
 
-/**
- * Explore legal reveals until a removable pair is reached. The normalized
- * state key prevents a sequence which only turns hidden tiles over in turn
- * from being mistaken for progress (or being explored forever).
- */
 function findRevealLeadingToPair<T extends TileState>(tiles: readonly T[]): T | null {
   const pending: Array<{ state: TileState[]; firstRevealId: number }> = [];
   for (const tile of tiles) {
@@ -161,7 +191,6 @@ function findRevealLeadingToPair<T extends TileState>(tiles: readonly T[]): T | 
 function revealTile(candidateId: number, tiles: readonly TileState[]): TileState[] {
   return tiles.map((tile) => ({
     ...tile,
-    // Only one originally hidden tile may remain face-up at a time.
     faceDown: tile.id === candidateId ? false : tile.originallyFaceDown ? true : tile.faceDown,
   }));
 }
@@ -180,7 +209,6 @@ export function removePair(first: TileState, second: TileState, tiles: readonly 
   return true;
 }
 
-/** Marks visible tiles first, then fills the difficulty-dependent total at random. */
 export function createFaceDownFlags(positions: readonly TilePosition[], difficulty: 'easy' | 'normal' | 'hard', random: RandomSource = Math.random): boolean[] {
   const count = positions.length;
   const ratio = difficulty === 'easy' ? 0 : difficulty === 'normal' ? 0.125 : 0.225;
@@ -193,7 +221,6 @@ export function createFaceDownFlags(positions: readonly TilePosition[], difficul
   const uncovered = shuffled(states.filter((tile) => isTileUncovered(tile, states)), random);
   const chosen = new Set<number>();
 
-  // A free hidden tile gives the player an immediately revealable action.
   if (free[0]) chosen.add(free[0].id);
   for (const tile of uncovered) {
     if (chosen.size >= requiredVisible) break;
@@ -206,7 +233,6 @@ export function createFaceDownFlags(positions: readonly TilePosition[], difficul
   return Array.from({ length: count }, (_, index) => chosen.has(index));
 }
 
-/** Restores the logical deal used by RESTART without changing board coordinates. */
 export function resetTiles(tiles: TileState[], initialTypes: readonly string[]): void {
   if (tiles.length !== initialTypes.length) throw new Error('Initial deal does not match the board');
   tiles.forEach((tile, index) => { tile.type = initialTypes[index]; tile.removed = false; });
@@ -221,7 +247,6 @@ function shuffled<T>(values: readonly T[], random: RandomSource): T[] {
   return result;
 }
 
-/** Finds a legal geometric removal order for a board shape. */
 export function findSolvableRemovalOrder(positions: readonly TilePosition[], random: RandomSource = Math.random): Array<readonly [number, number]> {
   if (positions.length % 2) throw new Error('Board requires an even number of tiles');
   const states: TileState[] = positions.map((position, id) => ({ id, type: '', ...position, removed: false }));
@@ -242,7 +267,6 @@ export function findSolvableRemovalOrder(positions: readonly TilePosition[], ran
   return order;
 }
 
-/** Finds a legal geometric removal order, then deals identical faces onto each pair. */
 export function generateSolvableTypes(positions: readonly TilePosition[], faces: readonly string[], random: RandomSource = Math.random): string[] {
   if (positions.length % 2 || faces.length !== positions.length / 2) throw new Error('A face is required for every tile pair');
   const order = findSolvableRemovalOrder(positions, random);
@@ -253,7 +277,6 @@ export function generateSolvableTypes(positions: readonly TilePosition[], faces:
   return result;
 }
 
-/** Shuffles active faces in place, forcing a playable free pair when possible. */
 export function shuffleActiveTypes(tiles: TileState[], random: RandomSource = Math.random): void {
   const active = tiles.filter((tile) => !tile.removed);
   if (!active.length) return;
@@ -266,10 +289,6 @@ export function shuffleActiveTypes(tiles: TileState[], random: RandomSource = Ma
   active.forEach((tile, index) => { tile.type = types[index]; });
 }
 
-/**
- * Builds shuffle candidates away from the live board and returns only a board
- * which the complete rules search has certified. The input is never mutated.
- */
 export function createCertifiedShuffle(
   source: readonly TileState[], seed: number, maxAttempts = 24, nodeLimit = 1_000_000,
 ): CertifiedShuffleResult {

@@ -2,7 +2,7 @@ import { BoardManager } from './BoardManager';
 import { Tile } from './Tile';
 import { UIManager } from './UIManager';
 import { DIFFICULTIES, Difficulty } from './BoardLayout';
-import type { CertifiedShuffleResult, SearchResult, TileState } from './GameRules';
+import type { AvailableAction, CertifiedShuffleResult, SearchResult, TileState } from './GameRules';
 
 interface Snapshot { tiles: TileState[]; moves: number; history: Array<{ tiles: TileState[]; moves: number }> }
 
@@ -21,6 +21,11 @@ export class MatchManager {
   private checkingTimer?: number;
   private searchTimer?: number;
   private shuffling = false;
+  private hinting = false;
+  private hintRequestId = 0;
+  private hintTargetIds = new Set<number>();
+  private hintConsumedStateHash?: string;
+  private hintVisitedStateHashes = new Set<string>();
 
   constructor(private readonly board: BoardManager, private readonly ui: UIManager) {
     this.ui.onRestart(() => this.restart()); this.ui.onHint(() => this.hint());
@@ -31,33 +36,46 @@ export class MatchManager {
 
   select(tile: Tile): void {
     if (this.flipping || this.stuck) return;
+    if (this.hinting) this.cancelHintRequest();
+    const wasHintTarget = this.hintTargetIds.has(tile.id);
+    this.board.clearHintDisplay();
+    if (this.hintTargetIds.size && !wasHintTarget) {
+      this.board.discardHintPlan(); this.hintTargetIds.clear(); this.hintVisitedStateHashes.clear();
+    }
+
     if (!this.board.isFree(tile)) { tile.flash('blocked'); this.ui.showMessage('この牌はまだ取得できません', true); return; }
-    if (tile.faceDown) { this.recordHistory(); void this.revealFaceDown(tile); return; }
+    if (tile.faceDown) {
+      if (!(wasHintTarget && this.hintTargetIds.size === 1)) this.board.discardHintPlan();
+      this.hintTargetIds.clear(); this.recordHistory(); void this.revealFaceDown(tile); return;
+    }
     if (tile === this.selected) { tile.setSelected(false); this.selected = null; this.ui.showMessage('同じ牌を2枚選んでください'); return; }
     if (!this.selected) { tile.setSelected(true); this.selected = tile; this.ui.showMessage('同じ絵柄の牌を選んでください'); return; }
     if (this.selected.type === tile.type) {
-      this.recordHistory();
+      const followedHint = this.hintTargetIds.size === 2 && this.hintTargetIds.has(this.selected.id) && this.hintTargetIds.has(tile.id);
+      if (!followedHint) { this.board.discardHintPlan(); this.hintVisitedStateHashes.clear(); }
+      this.hintTargetIds.clear(); this.recordHistory();
       const first = this.selected; this.selected.setSelected(false);
       this.board.remove(this.selected); this.board.remove(tile); this.selected = null;
       if (this.revealedFaceDownTile === first || this.revealedFaceDownTile === tile) this.revealedFaceDownTile = null;
       this.moves++; this.ui.updateMoves(this.moves);
       const count = this.board.activeTiles.length; this.ui.updateRemaining(count);
-      if (count === 0) { this.invalidateSearch(); this.ui.showClear(this.moves); }
+      if (count === 0) { this.discardHint(true); this.invalidateSearch(); this.ui.showClear(this.moves); }
       else { this.ui.showMessage('マッチ！ クリア可能性を確認しています'); this.checkProgress(); }
       return;
     }
+    this.board.discardHintPlan(); this.hintTargetIds.clear(); this.hintVisitedStateHashes.clear();
     this.selected.setSelected(false); this.selected = null; this.ui.showMessage('絵柄が違います', true);
   }
 
   restart(): void {
-    this.invalidateSearch(); this.selected?.setSelected(false); this.selected = null;
+    this.discardHint(true); this.invalidateSearch(); this.selected?.setSelected(false); this.selected = null;
     this.revealedFaceDownTile = null; this.flipping = false; this.stuck = false;
     this.board.restart(); this.moves = 0; this.history = []; this.safe = undefined;
     this.resetLimits(); this.ui.reset(this.board.activeTiles.length); this.checkProgress();
   }
 
   private changeDifficulty(difficulty: Difficulty): void {
-    this.invalidateSearch(); this.board.newDeal(difficulty); window.dispatchEvent(new Event('resize'));
+    this.discardHint(true); this.invalidateSearch(); this.board.newDeal(difficulty); window.dispatchEvent(new Event('resize'));
     this.selected = null; this.revealedFaceDownTile = null; this.flipping = false; this.stuck = false;
     this.moves = 0; this.history = []; this.safe = undefined; this.resetLimits();
     this.ui.reset(this.board.activeTiles.length); this.checkProgress();
@@ -65,20 +83,104 @@ export class MatchManager {
 
   private resetLimits(): void {
     const config = DIFFICULTIES[this.board.difficulty]; this.hints = config.hints; this.shuffles = config.shuffles;
+    this.hintConsumedStateHash = undefined; this.hintVisitedStateHashes.clear();
     this.ui.updateDifficulty(this.board.difficulty, this.hints, this.shuffles);
   }
 
   private hint(): void {
-    if (this.hints === 0 || this.stuck) return;
-    const action = this.board.getHint(); if (!action) { this.checkProgress(); return; }
-    if (this.hints !== null) this.hints--; this.ui.updateDifficulty(this.board.difficulty, this.hints, this.shuffles);
-    if (action.kind === 'pair') { action.tiles[0].flash('hint'); action.tiles[1].flash('hint'); this.ui.showMessage('取れるペアをハイライトしました'); }
-    else { action.tile.flash('hint'); this.ui.showMessage('めくれる裏向き牌をハイライトしました'); }
+    if (this.hints === 0 || this.stuck || this.flipping || this.shuffling || this.hinting || this.board.activeTiles.length === 0) return;
+    this.selected?.setSelected(false); this.selected = null;
+    this.board.clearHintDisplay(); this.hintTargetIds.clear();
+
+    // HINT owns the solver while it is running. Stop an older progress check,
+    // then identify this request by revision, request ID, and board hash.
+    this.worker?.terminate(); this.worker = undefined;
+    window.clearTimeout(this.checkingTimer); window.clearTimeout(this.searchTimer);
+    const revision = ++this.revision;
+    const requestId = ++this.hintRequestId;
+    const stateHash = this.board.stateHash();
+    const candidate = this.snapshot();
+
+    const cached = this.board.getHint();
+    if (cached) {
+      this.safe = candidate; this.stuck = false; this.displayHint(cached, stateHash); return;
+    }
+
+    const worker = new Worker(new URL('./solver.worker.ts', import.meta.url), { type: 'module' }); this.worker = worker;
+    this.hinting = true;
+    this.checkingTimer = window.setTimeout(() => {
+      if (requestId === this.hintRequestId && revision === this.revision && this.hinting) this.ui.showMessage('THINKING...');
+    }, 120);
+    this.searchTimer = window.setTimeout(() => {
+      if (requestId !== this.hintRequestId || revision !== this.revision) return;
+      worker.terminate(); this.worker = undefined; this.hinting = false;
+      this.ui.showMessage('安全な手を確認できませんでした。回数は消費していません', true);
+    }, 5000);
+    worker.onmessage = ({ data }: MessageEvent<{ kind: 'hint'; revision: number; requestId: number; result: SearchResult }>) => {
+      if (data.kind !== 'hint' || data.requestId !== requestId || requestId !== this.hintRequestId || data.revision !== revision || revision !== this.revision) return;
+      window.clearTimeout(this.checkingTimer); window.clearTimeout(this.searchTimer);
+      worker.terminate(); this.worker = undefined; this.hinting = false;
+      if (this.board.stateHash() !== stateHash) return;
+      if (data.result.status === 'SOLVABLE' && data.result.stateHash === stateHash) {
+        const action = this.board.getHint(data.result);
+        if (action) {
+          this.safe = candidate; this.stuck = false;
+          if (this.displayHint(action, stateHash)) return;
+        }
+      }
+      if (data.result.status === 'UNSOLVABLE') {
+        this.board.discardHintPlan(); this.stuck = true; this.ui.showStuck(this.shuffles !== 0, Boolean(this.safe)); return;
+      }
+      this.ui.showMessage('安全な手を確認できませんでした。回数は消費していません', true);
+    };
+    worker.onerror = () => {
+      if (requestId !== this.hintRequestId || revision !== this.revision) return;
+      window.clearTimeout(this.checkingTimer); window.clearTimeout(this.searchTimer);
+      worker.terminate(); this.worker = undefined; this.hinting = false;
+      this.ui.showMessage('HINTの探索に失敗しました。回数は消費していません', true);
+    };
+    worker.postMessage({
+      kind: 'hint', revision, requestId, tiles: candidate.tiles, nodeLimit: 1_000_000,
+      avoidStateHashes: [...this.hintVisitedStateHashes],
+    });
+  }
+
+  private displayHint(action: AvailableAction<Tile>, stateHash: string): boolean {
+    if (this.board.stateHash() !== stateHash || this.stuck) return false;
+    this.board.clearHintDisplay(); this.hintTargetIds.clear();
+    if (action.kind === 'pair') {
+      const [first, second] = action.tiles;
+      if (first.removed || second.removed || first.faceDown || second.faceDown || first.type !== second.type || !this.board.isFree(first) || !this.board.isFree(second)) return false;
+      first.flash('hint'); second.flash('hint'); this.hintTargetIds.add(first.id); this.hintTargetIds.add(second.id);
+      this.ui.showMessage('安全なペアをハイライトしました');
+    } else {
+      if (action.tile.removed || !action.tile.faceDown || !this.board.isFree(action.tile)) return false;
+      action.tile.flash('hint'); this.hintTargetIds.add(action.tile.id);
+      this.ui.showMessage('安全にめくれる裏向き牌をハイライトしました');
+    }
+    this.hintVisitedStateHashes.add(stateHash);
+    if (this.hintConsumedStateHash !== stateHash) {
+      if (this.hints !== null) this.hints--;
+      this.hintConsumedStateHash = stateHash;
+      this.ui.updateDifficulty(this.board.difficulty, this.hints, this.shuffles);
+    }
+    return true;
+  }
+
+  private cancelHintRequest(): void {
+    if (!this.hinting) return;
+    this.hintRequestId++; this.revision++; this.worker?.terminate(); this.worker = undefined; this.hinting = false;
+    window.clearTimeout(this.checkingTimer); window.clearTimeout(this.searchTimer);
+  }
+
+  private discardHint(discardPlan: boolean): void {
+    this.cancelHintRequest(); this.board.clearHintDisplay(); this.hintTargetIds.clear();
+    if (discardPlan) { this.board.discardHintPlan(); this.hintVisitedStateHashes.clear(); }
   }
 
   private shuffle(): void {
     if (this.shuffles === 0 || this.shuffling) return;
-    this.invalidateSearch();
+    this.discardHint(true); this.invalidateSearch();
     const revision = ++this.revision, before = this.snapshot();
     const worker = new Worker(new URL('./solver.worker.ts', import.meta.url), { type: 'module' }); this.worker = worker;
     this.shuffling = true; this.ui.setShuffling(true, this.board.difficulty, this.hints, this.shuffles);
@@ -133,7 +235,7 @@ export class MatchManager {
 
   private restoreSafe(): void {
     if (!this.safe) return;
-    this.invalidateSearch(); this.board.restore(this.safe.tiles); this.moves = this.safe.moves;
+    this.discardHint(true); this.invalidateSearch(); this.board.restore(this.safe.tiles); this.moves = this.safe.moves;
     this.history = this.safe.history.map((entry) => ({ tiles: entry.tiles.map((tile) => ({ ...tile })), moves: entry.moves }));
     this.selected = null; this.revealedFaceDownTile = this.board.tiles.find((tile) => tile.originallyFaceDown && !tile.faceDown && !tile.removed) ?? null;
     this.stuck = false; this.ui.updateMoves(this.moves); this.ui.updateRemaining(this.board.activeTiles.length);
@@ -145,7 +247,7 @@ export class MatchManager {
     window.clearTimeout(this.checkingTimer); window.clearTimeout(this.searchTimer);
     const candidate = this.snapshot();
     const worker = new Worker(new URL('./solver.worker.ts', import.meta.url), { type: 'module' }); this.worker = worker;
-    this.checkingTimer = window.setTimeout(() => { if (revision === this.revision) this.ui.showMessage('CHECKING...'); }, 120);
+    this.checkingTimer = window.setTimeout(() => { if (revision === this.revision && !this.hintTargetIds.size) this.ui.showMessage('CHECKING...'); }, 120);
     this.searchTimer = window.setTimeout(() => {
       if (revision !== this.revision) return; worker.terminate(); this.worker = undefined;
       this.applySearchResult(revision, candidate, { status: 'UNKNOWN', solvable: false, canRemovePair: false, visitedStates: 0, cycleStates: 0, maxDepth: 0, removalPairs: 0, revealMoves: 0 });
@@ -159,13 +261,19 @@ export class MatchManager {
 
   private applySearchResult(revision: number, candidate: Snapshot, result: SearchResult): void {
     if (revision !== this.revision) return; window.clearTimeout(this.checkingTimer);
-    if (result.status === 'SOLVABLE') { this.safe = candidate; this.stuck = false; this.ui.hideResult(); this.ui.showMessage('同じ牌を2枚選んでください'); }
-    else if (result.status === 'UNSOLVABLE') { this.stuck = true; this.ui.showStuck(this.shuffles !== 0, Boolean(this.safe)); }
-    else if (result.status === 'UNKNOWN') { this.ui.showMessage('探索上限のため判定を保留しました'); }
+    if (result.status === 'SOLVABLE') {
+      this.safe = candidate; this.stuck = false; this.ui.hideResult();
+      if (!this.hintTargetIds.size) this.ui.showMessage('同じ牌を2枚選んでください');
+    } else if (result.status === 'UNSOLVABLE') {
+      this.discardHint(true); this.stuck = true; this.ui.showStuck(this.shuffles !== 0, Boolean(this.safe));
+    } else if (result.status === 'UNKNOWN' && !this.hintTargetIds.size) {
+      this.ui.showMessage('探索上限のため判定を保留しました');
+    }
   }
 
   private invalidateSearch(): void {
-    this.revision++; this.worker?.terminate(); this.worker = undefined;
+    if (this.hinting) this.hintRequestId++;
+    this.hinting = false; this.revision++; this.worker?.terminate(); this.worker = undefined;
     window.clearTimeout(this.checkingTimer); window.clearTimeout(this.searchTimer);
     if (this.shuffling) { this.shuffling = false; this.ui.setShuffling(false, this.board.difficulty, this.hints, this.shuffles); }
   }
