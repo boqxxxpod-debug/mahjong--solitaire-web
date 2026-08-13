@@ -1,0 +1,66 @@
+name: Codex Auto Merge
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, labeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  enable-auto-merge:
+    if: >-
+      startsWith(github.event.pull_request.head.ref, 'codex/') &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Codex label and manual-review override
+        id: labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          labels="$(gh api "repos/$REPO/issues/$PR" --jq '[.labels[].name] | join("\n")')"
+
+          if ! grep -Fxq 'codex' <<< "$labels"; then
+            echo 'Codex label is missing; skipping auto-merge.'
+            echo 'eligible=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if grep -Fxq 'manual-review' <<< "$labels"; then
+            echo 'manual-review label is present; skipping auto-merge.'
+            echo 'eligible=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo 'eligible=true' >> "$GITHUB_OUTPUT"
+
+      - name: Reject infrastructure-sensitive changes
+        id: paths
+        if: steps.labels.outputs.eligible == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          files="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')"
+          printf '%s\n' "$files"
+
+          if grep -Eq '^(\.github/|package(-lock)?\.json$|tsconfig.*\.json$|vite\.config\.|playwright\.config\.)' <<< "$files"; then
+            echo 'Infrastructure-sensitive file changed; manual review required.'
+            echo 'safe=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo 'safe=true' >> "$GITHUB_OUTPUT"
+
+      - name: Enable GitHub auto-merge
+        if: steps.labels.outputs.eligible == 'true' && steps.paths.outputs.safe == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: gh pr merge "$PR" --repo "$REPO" --auto --squash
