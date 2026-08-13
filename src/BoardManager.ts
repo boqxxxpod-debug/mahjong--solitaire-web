@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { BoardGeometry } from './BoardGeometry';
 import { Tile } from './Tile';
 import { analyzeBoard, applySolverAction, boardStateHash, hasAvailableAction, isFreeTile, isTileUncovered } from './GameRules';
-import type { AvailableAction, SolverAction, TileState } from './GameRules';
+import type { AvailableAction, SearchResult, SolverAction, TileState } from './GameRules';
 import { createSolvableDeal, Difficulty } from './BoardLayout';
 
 export class BoardManager {
@@ -21,7 +21,7 @@ export class BoardManager {
   }
 
   newDeal(difficulty: Difficulty = this.difficulty): void {
-    this.clearHintPlan();
+    this.discardHintPlan();
     const random = () => ((this.seedState = (this.seedState * 1664525 + 1013904223) >>> 0) / 2 ** 32);
     const { layout, faceDown } = createSolvableDeal(difficulty, random);
     const expectedCount = DIFFICULTY_TILE_COUNTS[difficulty];
@@ -68,6 +68,8 @@ export class BoardManager {
     }));
   }
 
+  stateHash(): string { return boardStateHash(this.states()); }
+
   isFree(tile: Tile): boolean {
     return isFreeTile({ id: tile.id, type: tile.type, ...tile.logical, removed: tile.removed }, this.states());
   }
@@ -84,7 +86,7 @@ export class BoardManager {
 
   restore(states: readonly TileState[]): void {
     if (states.length !== this.tiles.length) throw new Error('Snapshot does not match board');
-    this.clearHintPlan();
+    this.discardHintPlan();
     states.forEach((state, index) => {
       const tile = this.tiles[index];
       tile.removed = state.removed; tile.mesh.visible = !state.removed; tile.setSelected(false);
@@ -93,7 +95,7 @@ export class BoardManager {
     this.refreshFreeTiles();
   }
 
-  getHint(): AvailableAction<Tile> | null {
+  getHint(result?: SearchResult): AvailableAction<Tile> | null {
     const states = this.states();
     const stateHash = boardStateHash(states);
 
@@ -106,8 +108,7 @@ export class BoardManager {
     }
 
     if (!this.hintPlan.length) {
-      const result = analyzeBoard(states, 1_000_000);
-      if (result.status !== 'SOLVABLE' || !result.actions.length || result.stateHash !== stateHash) return null;
+      if (!result || result.status !== 'SOLVABLE' || !result.actions.length || result.stateHash !== stateHash) return null;
       this.hintPlan = [...result.actions];
       this.hintPlanStateHash = stateHash;
     }
@@ -117,13 +118,23 @@ export class BoardManager {
     if (!next) { this.clearHintPlan(); return null; }
     this.hintPlanNextHash = boardStateHash(next);
 
-    return action.kind === 'pair'
-      ? { kind: 'pair', tiles: [this.tiles[action.firstId], this.tiles[action.secondId]] }
-      : { kind: 'reveal', tile: this.tiles[action.tileId] };
+    if (action.kind === 'pair') {
+      const first = this.tiles[action.firstId], second = this.tiles[action.secondId];
+      return first && second ? { kind: 'pair', tiles: [first, second] } : null;
+    }
+    const tile = this.tiles[action.tileId];
+    return tile ? { kind: 'reveal', tile } : null;
+  }
+
+  clearHintDisplay(): void { this.tiles.forEach((tile) => tile.setHinted(false)); }
+
+  discardHintPlan(): void {
+    this.clearHintPlan();
+    this.clearHintDisplay();
   }
 
   restart(): void {
-    this.clearHintPlan();
+    this.discardHintPlan();
     this.tiles.forEach((tile, index) => {
       tile.removed = false; tile.mesh.visible = true; tile.setSelected(false);
       tile.setFaceDown(this.initialDeal[index].faceDown);
