@@ -15,7 +15,7 @@ export class Tile {
   selected = false;
   faceDown: boolean;
   /** Identifies tiles that belong to the deal's face-down pool. */
-  readonly originallyFaceDown: boolean;
+  originallyFaceDown: boolean;
   private displayedFaceDown: boolean;
 
   private feedbackTimer?: number;
