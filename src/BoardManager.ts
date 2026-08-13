@@ -70,6 +70,25 @@ export class BoardManager {
 
   stateHash(): string { return boardStateHash(this.states()); }
 
+  initialStates(): TileState[] {
+    return this.tiles.map((tile, index) => ({
+      id: tile.id, type: this.initialDeal[index].type, ...tile.logical, removed: false,
+      faceDown: this.initialDeal[index].faceDown, originallyFaceDown: tile.originallyFaceDown,
+    }));
+  }
+
+  restoreInitialDeal(initial: readonly TileState[]): void {
+    if (initial.length !== this.tiles.length || initial.some((state, index) => state.id !== index || state.x !== this.tiles[index].logical.x ||
+      state.y !== this.tiles[index].logical.y || state.z !== this.tiles[index].logical.z || state.removed ||
+      Boolean(state.faceDown) !== Boolean(state.originallyFaceDown)) ||
+      initial.map((tile) => tile.type).sort().join('\0') !== this.tiles.map((tile) => tile.type).sort().join('\0') ||
+      initial.filter((tile) => tile.originallyFaceDown).length !== this.tiles.filter((tile) => tile.originallyFaceDown).length) {
+      throw new Error('Saved initial deal does not match board');
+    }
+    this.initialDeal = initial.map((tile) => ({ type: tile.type, faceDown: Boolean(tile.faceDown) }));
+    this.tiles.forEach((tile, index) => { tile.originallyFaceDown = Boolean(initial[index].originallyFaceDown); });
+  }
+
   isFree(tile: Tile): boolean {
     return isFreeTile({ id: tile.id, type: tile.type, ...tile.logical, removed: tile.removed }, this.states());
   }

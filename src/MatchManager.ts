@@ -3,6 +3,7 @@ import { Tile } from './Tile';
 import { UIManager } from './UIManager';
 import { DIFFICULTIES, Difficulty } from './BoardLayout';
 import type { AvailableAction, CertifiedShuffleResult, SearchResult, TileState } from './GameRules';
+import { clearSavedGame, loadSavedGame, saveGame, SAVE_SCHEMA_VERSION, type SavedGame } from './GamePersistence';
 
 interface Snapshot { tiles: TileState[]; moves: number; history: Array<{ tiles: TileState[]; moves: number }> }
 
@@ -26,12 +27,15 @@ export class MatchManager {
   private hintTargetIds = new Set<number>();
   private hintConsumedStateHash?: string;
   private hintVisitedStateHashes = new Set<string>();
+  private storageWarningShown = false;
 
   constructor(private readonly board: BoardManager, private readonly ui: UIManager) {
     this.ui.onRestart(() => this.restart()); this.ui.onHint(() => this.hint());
     this.ui.onShuffle(() => this.shuffle()); this.ui.onUndo(() => this.restoreSafe());
     this.ui.onDifficulty((difficulty) => this.changeDifficulty(difficulty));
-    this.resetLimits(); this.ui.reset(this.board.activeTiles.length); this.checkProgress();
+    if (!this.restoreSaved()) { this.resetLimits(); this.ui.reset(this.board.activeTiles.length); this.persist(); }
+    this.checkProgress();
+    window.addEventListener('pagehide', () => { if (!this.flipping && !this.shuffling) this.persist(); });
   }
 
   select(tile: Tile): void {
@@ -59,8 +63,8 @@ export class MatchManager {
       if (this.revealedFaceDownTile === first || this.revealedFaceDownTile === tile) this.revealedFaceDownTile = null;
       this.moves++; this.ui.updateMoves(this.moves);
       const count = this.board.activeTiles.length; this.ui.updateRemaining(count);
-      if (count === 0) { this.discardHint(true); this.invalidateSearch(); this.ui.showClear(this.moves); }
-      else { this.ui.showMessage('マッチ！ クリア可能性を確認しています'); this.checkProgress(); }
+      if (count === 0) { this.discardHint(true); this.invalidateSearch(); clearSavedGame(); this.ui.showClear(this.moves); }
+      else { this.ui.showMessage('マッチ！ クリア可能性を確認しています'); this.persist(); this.checkProgress(); }
       return;
     }
     this.board.discardHintPlan(); this.hintTargetIds.clear(); this.hintVisitedStateHashes.clear();
@@ -71,14 +75,14 @@ export class MatchManager {
     this.discardHint(true); this.invalidateSearch(); this.selected?.setSelected(false); this.selected = null;
     this.revealedFaceDownTile = null; this.flipping = false; this.stuck = false;
     this.board.restart(); this.moves = 0; this.history = []; this.safe = undefined;
-    this.resetLimits(); this.ui.reset(this.board.activeTiles.length); this.checkProgress();
+    this.resetLimits(); this.ui.reset(this.board.activeTiles.length); this.persist(); this.checkProgress();
   }
 
   private changeDifficulty(difficulty: Difficulty): void {
     this.discardHint(true); this.invalidateSearch(); this.board.newDeal(difficulty); window.dispatchEvent(new Event('resize'));
     this.selected = null; this.revealedFaceDownTile = null; this.flipping = false; this.stuck = false;
     this.moves = 0; this.history = []; this.safe = undefined; this.resetLimits();
-    this.ui.reset(this.board.activeTiles.length); this.checkProgress();
+    this.ui.reset(this.board.activeTiles.length); this.persist(); this.checkProgress();
   }
 
   private resetLimits(): void {
@@ -163,6 +167,7 @@ export class MatchManager {
       if (this.hints !== null) this.hints--;
       this.hintConsumedStateHash = stateHash;
       this.ui.updateDifficulty(this.board.difficulty, this.hints, this.shuffles);
+      this.persist();
     }
     return true;
   }
@@ -216,7 +221,7 @@ export class MatchManager {
     this.board.restore(result.tiles); this.history.push({ tiles: before.tiles, moves: before.moves });
     if (this.shuffles !== null) this.shuffles--; this.stuck = false;
     this.ui.setShuffling(false, this.board.difficulty, this.hints, this.shuffles);
-    this.ui.hideResult(); this.ui.showMessage('安全な配置へシャッフルしました'); this.checkProgress();
+    this.ui.hideResult(); this.ui.showMessage('安全な配置へシャッフルしました'); this.persist(); this.checkProgress();
   }
 
   private async revealFaceDown(tile: Tile): Promise<void> {
@@ -225,7 +230,7 @@ export class MatchManager {
     this.selected?.setSelected(false); this.selected = null;
     const animations = previousTiles.map((previous) => previous.flipTo(true)); animations.push(tile.flipTo(false));
     this.revealedFaceDownTile = tile; this.ui.showMessage('裏向き牌を表にしました');
-    await Promise.all(animations); this.flipping = false; this.checkProgress();
+    await Promise.all(animations); this.flipping = false; this.persist(); this.checkProgress();
   }
 
   private recordHistory(): void { this.history.push({ tiles: this.board.states(), moves: this.moves }); }
@@ -239,7 +244,7 @@ export class MatchManager {
     this.history = this.safe.history.map((entry) => ({ tiles: entry.tiles.map((tile) => ({ ...tile })), moves: entry.moves }));
     this.selected = null; this.revealedFaceDownTile = this.board.tiles.find((tile) => tile.originallyFaceDown && !tile.faceDown && !tile.removed) ?? null;
     this.stuck = false; this.ui.updateMoves(this.moves); this.ui.updateRemaining(this.board.activeTiles.length);
-    this.ui.hideResult(); this.ui.showMessage('最後に確認できた安全な盤面へ戻りました'); this.checkProgress();
+    this.ui.hideResult(); this.ui.showMessage('最後に確認できた安全な盤面へ戻りました'); this.persist(); this.checkProgress();
   }
 
   private checkProgress(): void {
@@ -263,6 +268,7 @@ export class MatchManager {
     if (revision !== this.revision) return; window.clearTimeout(this.checkingTimer);
     if (result.status === 'SOLVABLE') {
       this.safe = candidate; this.stuck = false; this.ui.hideResult();
+      this.persist();
       if (!this.hintTargetIds.size) this.ui.showMessage('同じ牌を2枚選んでください');
     } else if (result.status === 'UNSOLVABLE') {
       this.discardHint(true); this.stuck = true; this.ui.showStuck(this.shuffles !== 0, Boolean(this.safe));
@@ -276,5 +282,46 @@ export class MatchManager {
     this.hinting = false; this.revision++; this.worker?.terminate(); this.worker = undefined;
     window.clearTimeout(this.checkingTimer); window.clearTimeout(this.searchTimer);
     if (this.shuffling) { this.shuffling = false; this.ui.setShuffling(false, this.board.difficulty, this.hints, this.shuffles); }
+  }
+
+  private restoreSaved(): boolean {
+    const loaded = loadSavedGame();
+    if (!loaded.game) {
+      if (loaded.discarded) queueMicrotask(() => this.ui.showMessage('保存データを復元できなかったため新しいゲームを開始しました', true));
+      return false;
+    }
+    try {
+      const game = loaded.game;
+      this.board.newDeal(game.difficulty); this.board.restoreInitialDeal(game.initialTiles); this.board.restore(game.tiles);
+      this.moves = game.moves; this.hints = game.hints; this.shuffles = game.shuffles;
+      this.history = this.cloneHistory(game.history);
+      this.safe = game.safe ? { tiles: game.safe.tiles.map((tile) => ({ ...tile })), moves: game.safe.moves, history: this.cloneHistory(game.safe.history) } : undefined;
+      this.selected = null; this.revealedFaceDownTile = this.board.tiles.find((tile) => tile.originallyFaceDown && !tile.faceDown && !tile.removed) ?? null;
+      this.stuck = false; this.board.discardHintPlan(); this.hintTargetIds.clear(); this.hintVisitedStateHashes.clear(); this.hintConsumedStateHash = undefined;
+      this.ui.restore(this.board.activeTiles.length, this.moves, game.elapsedMs); this.ui.updateDifficulty(game.difficulty, this.hints, this.shuffles);
+      return true;
+    } catch {
+      clearSavedGame(); this.board.newDeal();
+      queueMicrotask(() => this.ui.showMessage('保存データを復元できなかったため新しいゲームを開始しました', true));
+      return false;
+    }
+  }
+
+  private cloneHistory(history: readonly { tiles: TileState[]; moves: number }[]): Array<{ tiles: TileState[]; moves: number }> {
+    return history.map((entry) => ({ tiles: entry.tiles.map((tile) => ({ ...tile })), moves: entry.moves }));
+  }
+
+  private persist(): void {
+    if (this.flipping || this.shuffling || this.board.activeTiles.length === 0) return;
+    const game: SavedGame = {
+      version: SAVE_SCHEMA_VERSION, savedAt: Date.now(), difficulty: this.board.difficulty,
+      tiles: this.board.states(), initialTiles: this.board.initialStates(), moves: this.moves,
+      hints: this.hints, shuffles: this.shuffles, history: this.cloneHistory(this.history),
+      safe: this.safe ? { tiles: this.safe.tiles.map((tile) => ({ ...tile })), moves: this.safe.moves, history: this.cloneHistory(this.safe.history) } : null,
+      elapsedMs: this.ui.elapsedTime(),
+    };
+    if (!saveGame(game) && !this.storageWarningShown) {
+      this.storageWarningShown = true; this.ui.showMessage('ゲームを保存できませんでした。プレイは続けられます', true);
+    }
   }
 }
