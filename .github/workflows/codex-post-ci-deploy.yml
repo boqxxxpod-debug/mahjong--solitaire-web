@@ -1,0 +1,35 @@
+name: Deploy after Codex auto-merge
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  actions: write
+  pull-requests: read
+
+jobs:
+  deploy-after-merge:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      startsWith(github.event.workflow_run.head_branch, 'codex/') &&
+      github.event.workflow_run.pull_requests[0].number != null
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for merged PR and dispatch Pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.workflow_run.pull_requests[0].number }}
+        run: |
+          for attempt in {1..36}; do
+            merged_at="$(gh pr view "$PR" --repo "$REPO" --json mergedAt --jq '.mergedAt // empty')"
+            if [[ -n "$merged_at" ]]; then
+              gh workflow run deploy-pages.yml --repo "$REPO" --ref main
+              echo "Dispatched GitHub Pages after PR #$PR merged."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "PR #$PR was not merged within six minutes; no deploy dispatched."
