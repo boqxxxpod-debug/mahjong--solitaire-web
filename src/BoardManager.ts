@@ -126,7 +126,7 @@ export class BoardManager {
     return tile ? { kind: 'reveal', tile } : null;
   }
 
-  clearHintDisplay(): void { this.tiles.forEach((tile) => tile.setHinted(false)); }
+  clearHintDisplay(): void { this.tiles.forEach((tile) => tile.clearFeedback()); }
 
   discardHintPlan(): void {
     this.clearHintPlan();
