@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { BoardGeometry } from './BoardGeometry';
 import { Tile } from './Tile';
-import { analyzeBoard, getAvailableActions, hasAvailableAction, isFreeTile, isTileUncovered } from './GameRules';
-import type { AvailableAction, TileState } from './GameRules';
+import { analyzeBoard, applySolverAction, boardStateHash, hasAvailableAction, isFreeTile, isTileUncovered } from './GameRules';
+import type { AvailableAction, SolverAction, TileState } from './GameRules';
 import { createSolvableDeal, Difficulty } from './BoardLayout';
 
 export class BoardManager {
@@ -10,6 +10,10 @@ export class BoardManager {
   private readonly geometry = new BoardGeometry();
   private seedState: number;
   private initialDeal: Array<{ type: string; faceDown: boolean }> = [];
+  private hintPlan: SolverAction[] = [];
+  private hintPlanStateHash?: string;
+  private hintPlanNextHash?: string;
+
   constructor(private readonly scene: THREE.Scene, public difficulty: Difficulty = 'normal') {
     const seed = new URLSearchParams(location.search).get('seed');
     this.seedState = seed === null ? Math.floor(Math.random() * 0xffffffff) : this.hashSeed(seed);
@@ -17,14 +21,13 @@ export class BoardManager {
   }
 
   newDeal(difficulty: Difficulty = this.difficulty): void {
+    this.clearHintPlan();
     const random = () => ((this.seedState = (this.seedState * 1664525 + 1013904223) >>> 0) / 2 ** 32);
     const { layout, faceDown } = createSolvableDeal(difficulty, random);
     const expectedCount = DIFFICULTY_TILE_COUNTS[difficulty];
     if (layout.length !== expectedCount) throw new Error(`${difficulty} layout contains ${layout.length}/${expectedCount} tiles`);
     const nextTiles = layout.map(({ face, ...position }, index) => new Tile(index, face, position, this.geometry, faceDown[index]));
 
-    // Build and validate the replacement first. If generation ever fails, the
-    // currently visible board remains intact instead of being replaced by [].
     this.tiles.forEach((tile) => {
       this.scene.remove(tile.mesh);
       (tile.mesh.material as THREE.Material[]).forEach((material) => material.dispose());
@@ -77,11 +80,11 @@ export class BoardManager {
 
   hasAvailableAction(): boolean { return hasAvailableAction(this.states()); }
 
-  /** Accurate dead-end check for UI consumers; bounded to protect a frame. */
   analyzeProgress() { return analyzeBoard(this.states(), 50_000); }
 
   restore(states: readonly TileState[]): void {
     if (states.length !== this.tiles.length) throw new Error('Snapshot does not match board');
+    this.clearHintPlan();
     states.forEach((state, index) => {
       const tile = this.tiles[index];
       tile.removed = state.removed; tile.mesh.visible = !state.removed; tile.setSelected(false);
@@ -91,14 +94,36 @@ export class BoardManager {
   }
 
   getHint(): AvailableAction<Tile> | null {
-    const action = getAvailableActions(this.states())[0];
-    if (!action) return null;
+    const states = this.states();
+    const stateHash = boardStateHash(states);
+
+    if (this.hintPlan.length && stateHash === this.hintPlanNextHash) {
+      this.hintPlan.shift();
+      this.hintPlanStateHash = stateHash;
+      this.hintPlanNextHash = undefined;
+    } else if (this.hintPlan.length && stateHash !== this.hintPlanStateHash) {
+      this.clearHintPlan();
+    }
+
+    if (!this.hintPlan.length) {
+      const result = analyzeBoard(states, 1_000_000);
+      if (result.status !== 'SOLVABLE' || !result.actions.length || result.stateHash !== stateHash) return null;
+      this.hintPlan = [...result.actions];
+      this.hintPlanStateHash = stateHash;
+    }
+
+    const action = this.hintPlan[0];
+    const next = applySolverAction(states, action);
+    if (!next) { this.clearHintPlan(); return null; }
+    this.hintPlanNextHash = boardStateHash(next);
+
     return action.kind === 'pair'
-      ? { kind: 'pair', tiles: [this.tiles[action.tiles[0].id], this.tiles[action.tiles[1].id]] }
-      : { kind: 'reveal', tile: this.tiles[action.tile.id] };
+      ? { kind: 'pair', tiles: [this.tiles[action.firstId], this.tiles[action.secondId]] }
+      : { kind: 'reveal', tile: this.tiles[action.tileId] };
   }
 
   restart(): void {
+    this.clearHintPlan();
     this.tiles.forEach((tile, index) => {
       tile.removed = false; tile.mesh.visible = true; tile.setSelected(false);
       tile.setFaceDown(this.initialDeal[index].faceDown);
@@ -115,6 +140,10 @@ export class BoardManager {
 
   private refreshFreeTiles(): void {
     this.tiles.forEach((tile) => tile.setFree(this.isFree(tile)));
+  }
+
+  private clearHintPlan(): void {
+    this.hintPlan = []; this.hintPlanStateHash = undefined; this.hintPlanNextHash = undefined;
   }
 
   private assertRenderable(expectedCount: number): void {
