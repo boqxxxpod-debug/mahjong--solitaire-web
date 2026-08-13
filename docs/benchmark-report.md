@@ -79,3 +79,13 @@ programmatic assertion にし、各組合せの screenshot も `screenshots/`（
   分岐数が必要なら CI とは別の長時間ジョブにし、node limit 到達を独立分類すべきである。
 - 10,000 seed/難易度で失敗 0 の上限は「絶対に失敗しない」という統計証明ではない。generator の構造的な証明と
   property test の双方を継続する。
+
+## Progress solvability validation (Issue #35)
+
+`npm run validate:progress` replays certified reachable states from EASY, NORMAL,
+and HARD deals and compares the UI solver classification with the deal's independent
+removal certificate. On 2026-08-13, 10,002 states produced **0 mismatches** and
+**0 UNKNOWN results**. Solver wall time was p50 **0.184 ms**, p95 **2.714 ms**,
+p99 **24.251 ms**, and maximum **138.440 ms**. Production search runs in a Web
+Worker, so these costs do not block rendering or touch input. Measurements vary by
+host and are intended as a regression baseline rather than a device guarantee.

@@ -9,6 +9,7 @@ export class UIManager {
   private readonly hintButton = document.querySelector<HTMLButtonElement>('#hint')!;
   private readonly shuffleButtons = document.querySelectorAll<HTMLButtonElement>('[data-shuffle]');
   private readonly resultShuffle = document.querySelector<HTMLElement>('#result-shuffle')!;
+  private readonly resultUndo = document.querySelector<HTMLButtonElement>('#result-undo')!;
   private readonly restartButtons = document.querySelectorAll<HTMLButtonElement>('[data-restart]');
   private readonly difficultyButtons = document.querySelectorAll<HTMLButtonElement>('[data-difficulty]');
   private readonly difficulty = document.querySelector<HTMLElement>('#difficulty')!;
@@ -21,6 +22,7 @@ export class UIManager {
   onRestart(handler: () => void): void { this.restartButtons.forEach((button) => button.addEventListener('click', handler)); }
   onHint(handler: () => void): void { this.hintButton.addEventListener('click', handler); }
   onShuffle(handler: () => void): void { this.shuffleButtons.forEach((button) => button.addEventListener('click', handler)); }
+  onUndo(handler: () => void): void { this.resultUndo.addEventListener('click', handler); }
   onDifficulty(handler: (difficulty: 'easy' | 'normal' | 'hard') => void): void {
     this.difficultyButtons.forEach((button) => button.addEventListener('click', () => handler(button.dataset.difficulty as 'easy' | 'normal' | 'hard')));
   }
@@ -38,14 +40,15 @@ export class UIManager {
   updateMoves(count: number): void { this.moves.textContent = String(count); }
   showClear(moves: number): void {
     this.stopTimer();
-    this.resultShuffle.hidden = true;
+    this.resultShuffle.hidden = true; this.resultUndo.hidden = true;
     this.showResult('CLEAR', `クリアタイム ${this.formatTime(this.elapsed)} ・ ${moves}手`);
   }
   showNoMoves(canShuffle: boolean): void {
-    this.resultShuffle.hidden = !canShuffle;
-    this.showResult('NO MORE MOVES', canShuffle
-      ? 'これ以上取れるペアがありません。SHUFFLEかRESTARTを選んでください'
-      : 'これ以上取れるペアがありません。RESTARTでもう一度遊べます');
+    this.showStuck(canShuffle, false);
+  }
+  showStuck(canShuffle: boolean, canUndo = true): void {
+    this.resultShuffle.hidden = !canShuffle; this.resultUndo.hidden = !canUndo;
+    this.showResult('STUCK', 'この盤面からクリアできません。安全な手まで戻るか、救済操作を選んでください');
   }
   reset(count: number): void {
     this.stopTimer(); this.elapsed = 0; this.startedAt = performance.now();
