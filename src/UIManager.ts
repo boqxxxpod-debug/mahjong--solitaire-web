@@ -55,19 +55,30 @@ export class UIManager {
     this.showResult('STUCK', 'この盤面からクリアできません。安全な手まで戻るか、救済操作を選んでください');
   }
   reset(count: number): void {
-    this.stopTimer(); this.elapsed = 0; this.startedAt = performance.now();
-    this.timer = window.setInterval(() => this.tick(), 250); this.tick(); this.updateMoves(0);
+    this.startTimer(0); this.updateMoves(0);
     this.updateRemaining(count);
     this.hideResult();
     this.showMessage('同じ牌を2枚選んでください');
+  }
+  restore(count: number, moves: number, elapsedMs: number): void {
+    this.startTimer(elapsedMs); this.updateMoves(moves); this.updateRemaining(count);
+    this.hideResult(); this.showMessage('保存したゲームを復元しました');
+  }
+  elapsedTime(): number { return this.elapsed + (this.timer === undefined ? 0 : performance.now() - this.startedAt); }
+  private startTimer(elapsedMs: number): void {
+    this.stopTimer(); this.elapsed = elapsedMs; this.startedAt = performance.now();
+    this.timer = window.setInterval(() => this.tick(), 250); this.tick(); this.updateMoves(0);
   }
   hideResult(): void {
     this.result.classList.remove('show');
     this.result.setAttribute('aria-hidden', 'true');
     this.result.inert = true;
   }
-  private tick(): void { this.elapsed = performance.now() - this.startedAt; this.time.textContent = this.formatTime(this.elapsed); }
-  private stopTimer(): void { if (this.timer !== undefined) window.clearInterval(this.timer); this.timer = undefined; }
+  private tick(): void { this.time.textContent = this.formatTime(this.elapsedTime()); }
+  private stopTimer(): void {
+    if (this.timer !== undefined) { this.elapsed += performance.now() - this.startedAt; window.clearInterval(this.timer); }
+    this.timer = undefined;
+  }
   private formatTime(milliseconds: number): string {
     const seconds = Math.floor(milliseconds / 1000);
     return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
