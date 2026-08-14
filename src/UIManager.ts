@@ -43,6 +43,20 @@ export class UIManager {
     this.traySlots.replaceChildren(...Array.from({ length: 5 }, (_, index) => { const slot = document.createElement('span');
       slot.className = 'tray-slot'; slot.textContent = trayTypes[index] ? trayTypes[index].replace(/[-_]/g, ' ') : ''; slot.toggleAttribute('data-filled', Boolean(trayTypes[index])); return slot; }));
   }
+  showTrayMatch(type: string): void {
+    const label = type.replace(/[-_]/g, ' ');
+    const source = [...this.traySlots.querySelectorAll<HTMLElement>('.tray-slot[data-filled]')]
+      .find((slot) => slot.textContent === label);
+    const left = source?.offsetLeft ?? this.traySlots.clientWidth / 2;
+    const top = source?.offsetTop ?? 0;
+    for (const offset of [-5, 5]) {
+      const tile = document.createElement('span');
+      tile.className = 'tray-match-tile'; tile.textContent = label; tile.setAttribute('aria-hidden', 'true');
+      tile.style.left = `${left + offset}px`; tile.style.top = `${top}px`;
+      this.traySlots.append(tile); tile.addEventListener('animationend', () => tile.remove(), { once: true });
+      window.setTimeout(() => tile.remove(), 320);
+    }
+  }
   setUndoEnabled(enabled: boolean): void { this.undoButton.disabled = !enabled; }
   onDifficulty(handler: (difficulty: 'easy' | 'normal' | 'hard') => void): void {
     this.difficultyButtons.forEach((button) => button.addEventListener('click', () => handler(button.dataset.difficulty as 'easy' | 'normal' | 'hard')));

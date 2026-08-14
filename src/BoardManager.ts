@@ -107,7 +107,7 @@ export class BoardManager {
 
   remove(tile: Tile): void {
     tile.removed = true;
-    tile.mesh.visible = false;
+    tile.animateRemoval();
     this.refreshFreeTiles();
   }
 
@@ -120,7 +120,7 @@ export class BoardManager {
     this.discardHintPlan();
     states.forEach((state, index) => {
       const tile = this.tiles[index];
-      tile.removed = state.removed; tile.mesh.visible = !state.removed; tile.setSelected(false);
+      tile.removed = state.removed; tile.resetRemovalVisual(); tile.mesh.visible = !state.removed;
       tile.setType(state.type); tile.setFaceDown(Boolean(state.faceDown));
     });
     this.refreshFreeTiles();
@@ -167,7 +167,7 @@ export class BoardManager {
   restart(): void {
     this.discardHintPlan();
     this.tiles.forEach((tile, index) => {
-      tile.removed = false; tile.mesh.visible = true; tile.setSelected(false);
+      tile.removed = false; tile.resetRemovalVisual(); tile.mesh.visible = true;
       tile.setFaceDown(this.initialDeal[index].faceDown);
       tile.setType(this.initialDeal[index].type);
     });

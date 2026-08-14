@@ -92,10 +92,12 @@ export class MatchManager {
   }
 
   private selectToTray(tile: Tile): void {
-    const states = this.board.states(); const nextTray = moveTileToTray(states[tile.id], states, this.tray);
+    const states = this.board.states(); const matchedType = this.tray.some((held) => held.type === tile.type) ? tile.type : undefined;
+    const nextTray = moveTileToTray(states[tile.id], states, this.tray);
     if (!nextTray) { tile.flash('blocked'); this.ui.showMessage('トレイが満杯です。一致する牌を選んでください', true); return; }
     this.processingTap = true; this.recordHistory(); this.board.remove(tile); this.tray = nextTray.map((held) => ({ ...held }));
-    this.moves++; this.ui.updateMoves(this.moves); this.ui.updateRemaining(this.board.activeTiles.length); this.renderTray(); this.processingTap = false;
+    this.moves++; this.ui.updateMoves(this.moves); this.ui.updateRemaining(this.board.activeTiles.length); this.renderTray();
+    if (matchedType) this.ui.showTrayMatch(matchedType); this.processingTap = false;
     if (isTrayClear(this.board.states(), this.tray)) { this.discardHint(true); this.invalidateSearch(); clearSavedGame();
       if (this.mode === 'tour' && this.stageId) this.completeStage(); else this.ui.showClear(this.moves); return; }
     if (isTrayGameOver(this.board.states(), this.tray)) { this.stuck = true; this.persist(); this.ui.showStuck(this.shuffles !== 0, true); return; }
