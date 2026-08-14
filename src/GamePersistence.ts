@@ -1,13 +1,14 @@
 import type { Difficulty } from './BoardLayout.js';
 import { DIORAMA_STAGE_ORDER, DIORAMA_STAGES, type DioramaStageId } from './DioramaStages.js';
-import type { TileState } from './GameRules.js';
+import { TRAY_CAPACITY, type PlayRule, type TileState } from './GameRules.js';
 
 export const SAVE_KEY = 'mahjong-solitaire.game.v1';
-export const SAVE_SCHEMA_VERSION = 2 as const;
+export const SAVE_SCHEMA_VERSION = 3 as const;
 
-export interface PersistedSnapshot { tiles: TileState[]; moves: number }
+export interface PersistedSnapshot { tiles: TileState[]; moves: number; tray: TileState[] }
 interface SavedBase {
   version: typeof SAVE_SCHEMA_VERSION; savedAt: number; tiles: TileState[]; initialTiles: TileState[];
+  playRule: PlayRule; tray: TileState[];
   moves: number; hints: number | null; shuffles: number | null; history: PersistedSnapshot[];
   safe: (PersistedSnapshot & { history: PersistedSnapshot[] }) | null; elapsedMs: number;
 }
@@ -48,9 +49,17 @@ function validTiles(value: unknown, count: number, initial?: readonly TileState[
   return true;
 }
 
-function validSnapshot(value: unknown, count: number, initial: readonly TileState[], positions?: readonly { x: number; y: number; z: number }[]): value is PersistedSnapshot {
+function validTray(value: unknown, initial: readonly TileState[]): value is TileState[] {
+  if (!Array.isArray(value) || value.length > TRAY_CAPACITY) return false;
+  const ids = new Set<number>();
+  return value.every((tile) => isRecord(tile) && Number.isInteger(tile.id) && !ids.has(tile.id as number) &&
+    Boolean(ids.add(tile.id as number)) && initial.some((source) => source.id === tile.id && source.type === tile.type));
+}
+
+function validSnapshot(value: unknown, count: number, initial: readonly TileState[], playRule: PlayRule, positions?: readonly { x: number; y: number; z: number }[]): value is PersistedSnapshot {
   return isRecord(value) && Number.isInteger(value.moves) && (value.moves as number) >= 0 &&
-    validTiles(value.tiles, count, initial, positions) && value.tiles.filter((tile) => tile.removed).length === (value.moves as number) * 2;
+    validTiles(value.tiles, count, initial, positions) && validTray(value.tray, initial) &&
+    (playRule === 'tray' || (value.tray as unknown[]).length === 0);
 }
 
 function validProgression(unlocked: unknown, completed: unknown): unlocked is DioramaStageId[] {
@@ -69,9 +78,15 @@ function validProgression(unlocked: unknown, completed: unknown): unlocked is Di
 export function parseSavedGame(raw: string): SavedGame | null {
   let value: unknown; try { value = JSON.parse(raw); } catch { return null; }
   if (!isRecord(value)) return null;
-  // Schema 1 is unambiguous Classic data. Upgrade it in memory without adding closed-page time.
+  // Older saves predate play rules and are unambiguously pair games.
   if (value.version === 1 && ['easy', 'normal', 'hard'].includes(value.difficulty as string)) value = { ...value, version: 2, mode: 'classic' };
-  if (!isRecord(value) || value.version !== 2 || (value.mode !== 'classic' && value.mode !== 'tour')) return null;
+  if (!isRecord(value)) return null;
+  if (value.version === 2) {
+    const addTray = (entry: unknown): unknown => isRecord(entry) ? { ...entry, tray: [], history: Array.isArray(entry.history) ? entry.history.map(addTray) : entry.history } : entry;
+    value = { ...value, version: 3, playRule: 'pair', tray: [], history: Array.isArray(value.history) ? value.history.map(addTray) : value.history,
+      safe: value.safe === null ? null : addTray(value.safe) };
+  }
+  if (!isRecord(value) || value.version !== 3 || (value.mode !== 'classic' && value.mode !== 'tour') || (value.playRule !== 'pair' && value.playRule !== 'tray')) return null;
   let count: number, limits: { hints: number | null; shuffles: number | null }, positions: readonly { x: number; y: number; z: number }[] | undefined;
   if (value.mode === 'classic') {
     if (!['easy', 'normal', 'hard'].includes(value.difficulty as string)) return null;
@@ -83,12 +98,12 @@ export function parseSavedGame(raw: string): SavedGame | null {
   }
   if (!validTiles(value.initialTiles, count, undefined, positions)) return null;
   const initial = value.initialTiles;
-  if (!validTiles(value.tiles, count, initial, positions) || !Number.isFinite(value.savedAt) || (value.savedAt as number) < 0 ||
-    !Number.isInteger(value.moves) || (value.moves as number) < 0 || value.tiles.filter((tile) => tile.removed).length !== (value.moves as number) * 2 ||
+  if (!validTiles(value.tiles, count, initial, positions) || !validTray(value.tray, initial) || !Number.isFinite(value.savedAt) || (value.savedAt as number) < 0 ||
+    !Number.isInteger(value.moves) || (value.moves as number) < 0 || (value.playRule === 'pair' && (value.tray as unknown[]).length !== 0) ||
     !validCounter(value.hints, limits.hints) || !validCounter(value.shuffles, limits.shuffles) || !Number.isFinite(value.elapsedMs) || (value.elapsedMs as number) < 0 ||
-    !Array.isArray(value.history) || !value.history.every((entry) => validSnapshot(entry, count, initial, positions))) return null;
-  if (value.safe !== null && (!isRecord(value.safe) || !validSnapshot(value.safe, count, initial, positions) || !Array.isArray(value.safe.history) ||
-    !value.safe.history.every((entry) => validSnapshot(entry, count, initial, positions)))) return null;
+    !Array.isArray(value.history) || !value.history.every((entry) => validSnapshot(entry, count, initial, value.playRule as PlayRule, positions))) return null;
+  if (value.safe !== null && (!isRecord(value.safe) || !validSnapshot(value.safe, count, initial, value.playRule as PlayRule, positions) || !Array.isArray(value.safe.history) ||
+    !value.safe.history.every((entry) => validSnapshot(entry, count, initial, value.playRule as PlayRule, positions)))) return null;
   return value as unknown as SavedGame;
 }
 
