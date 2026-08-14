@@ -70,10 +70,10 @@ const DRAGON = [
 export const DIORAMA_STAGE_ORDER = ['gate', 'tower', 'bridge', 'dragon'] as const;
 
 export const DIORAMA_STAGES: Readonly<Record<DioramaStageId, DioramaStage>> = {
-  gate: { id: 'gate', label: 'Gate', description: 'Open the side pillars to release the raised lintel.', positions: GATE, hints: 3, shuffles: 2, camera: { targetZ: 0.8, distanceScale: 1 } },
-  tower: { id: 'tower', label: 'Tower', description: 'Work inward through four compact storeys to the summit.', positions: TOWER, hints: 2, shuffles: 2, camera: { targetZ: 1.2, distanceScale: 0.9 } },
+  gate: { id: 'gate', label: 'Gate', description: 'Open the side pillars to release the raised lintel.', positions: GATE, hints: null, shuffles: null, camera: { targetZ: 0.8, distanceScale: 1 } },
+  tower: { id: 'tower', label: 'Tower', description: 'Work inward through four compact storeys to the summit.', positions: TOWER, hints: 3, shuffles: 2, camera: { targetZ: 1.2, distanceScale: 0.9 } },
   bridge: { id: 'bridge', label: 'Bridge', description: 'Clear both banks to bring down the raised central span.', positions: BRIDGE, hints: 2, shuffles: 1, camera: { targetZ: 0.8, distanceScale: 1.1 } },
-  dragon: { id: 'dragon', label: 'Dragon', description: 'Follow the winding body toward its raised head and crest.', positions: DRAGON, hints: 1, shuffles: 1, camera: { targetZ: 0.9, distanceScale: 1.15 } },
+  dragon: { id: 'dragon', label: 'Dragon', description: 'Follow the winding body toward its raised head and crest.', positions: DRAGON, hints: 1, shuffles: 0, camera: { targetZ: 0.9, distanceScale: 1.15 } },
 };
 
 const removalOrders = new Map<DioramaStageId, Array<readonly [number, number]>>();

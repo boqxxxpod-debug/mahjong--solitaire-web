@@ -4,6 +4,7 @@ import { Tile } from './Tile';
 import { analyzeBoard, applySolverAction, boardStateHash, hasAvailableAction, isFreeTile, isTileUncovered } from './GameRules';
 import type { AvailableAction, SearchResult, SolverAction, TileState } from './GameRules';
 import { createSolvableDeal, Difficulty } from './BoardLayout';
+import { createDioramaDeal, type DioramaStageId } from './DioramaStages';
 
 export class BoardManager {
   tiles: Tile[] = [];
@@ -18,6 +19,17 @@ export class BoardManager {
     const seed = new URLSearchParams(location.search).get('seed');
     this.seedState = seed === null ? Math.floor(Math.random() * 0xffffffff) : this.hashSeed(seed);
     this.newDeal(difficulty);
+  }
+
+  newDioramaDeal(stageId: DioramaStageId): void {
+    const random = () => ((this.seedState = (this.seedState * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+    const deal = createDioramaDeal(stageId, random);
+    this.replaceTiles(deal.tiles);
+  }
+
+  restoreDioramaGeometry(stageId: DioramaStageId): void {
+    const deal = createDioramaDeal(stageId, () => 0.5);
+    this.replaceTiles(deal.tiles);
   }
 
   newDeal(difficulty: Difficulty = this.difficulty): void {
@@ -170,6 +182,14 @@ export class BoardManager {
 
   private refreshFreeTiles(): void {
     this.tiles.forEach((tile) => tile.setFree(this.isFree(tile)));
+  }
+
+  private replaceTiles(states: readonly TileState[]): void {
+    this.discardHintPlan();
+    const nextTiles = states.map((state) => new Tile(state.id, state.type, state, this.geometry, state.faceDown));
+    this.tiles.forEach((tile) => { this.scene.remove(tile.mesh); (tile.mesh.material as THREE.Material[]).forEach((material) => material.dispose()); });
+    this.tiles = nextTiles; this.initialDeal = states.map((tile) => ({ type: tile.type, faceDown: Boolean(tile.faceDown) }));
+    this.tiles.forEach((tile) => this.scene.add(tile.mesh)); this.assertRenderable(states.length); this.refreshFreeTiles();
   }
 
   private clearHintPlan(): void {
