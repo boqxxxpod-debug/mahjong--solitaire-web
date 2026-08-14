@@ -20,6 +20,7 @@ export class Tile {
 
   private feedbackTimer?: number;
   private flipGeneration = 0;
+  private removalGeneration = 0;
   constructor(readonly id: number, public type: string, readonly logical: TilePosition, private readonly geometry: BoardGeometry, faceDown = false) {
     this.faceDown = faceDown;
     this.originallyFaceDown = faceDown;
@@ -93,6 +94,48 @@ export class Tile {
       material.emissive.setHex(selected ? 0x2b8f77 : 0x000000);
       material.emissiveIntensity = selected ? 0.5 : 0;
     });
+  }
+
+  /** Keeps removal feedback entirely visual: game state may advance while this runs. */
+  animateRemoval(): void {
+    const generation = ++this.removalGeneration;
+    window.clearTimeout(this.feedbackTimer);
+    this.selected = false;
+    const materials = this.materials();
+    materials.forEach((material) => {
+      material.transparent = true;
+      material.opacity = 1;
+      material.emissive.setHex(0x78f5c9);
+    });
+    const started = performance.now();
+    const duration = 280;
+    const animate = (now: number) => {
+      if (generation !== this.removalGeneration || !this.removed) return;
+      const progress = Math.min(1, (now - started) / duration);
+      const pop = progress < 0.24 ? 1 + 0.1 * (progress / 0.24) : 1.1 * (1 - (progress - 0.24) / 0.76);
+      const scale = Math.max(0.02, pop);
+      this.mesh.scale.setScalar(scale);
+      // Hold the face at full opacity through the pop so its pattern stays legible.
+      const opacity = progress < 0.48 ? 1 : 1 - (progress - 0.48) / 0.52;
+      materials.forEach((material) => {
+        material.opacity = Math.max(0, opacity);
+        material.emissiveIntensity = 0.85 * (1 - progress);
+      });
+      if (progress < 1) requestAnimationFrame(animate);
+      else this.mesh.visible = false;
+    };
+    requestAnimationFrame(animate);
+  }
+
+  resetRemovalVisual(): void {
+    this.removalGeneration++;
+    this.mesh.scale.setScalar(1);
+    this.mesh.rotation.set(0, 0, 0);
+    this.materials().forEach((material) => {
+      material.opacity = 1;
+      material.transparent = false;
+    });
+    this.setSelected(false);
   }
 
   setFree(free: boolean): void {
