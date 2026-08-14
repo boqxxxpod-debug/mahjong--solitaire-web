@@ -1,14 +1,15 @@
 /// <reference lib="webworker" />
-import { analyzeBoard, createCertifiedShuffle, TileState } from './GameRules';
+import { analyzeBoard, analyzeTrayBoard, createCertifiedShuffle, type PlayRule, type TileState } from './GameRules';
 
 type Request =
-  | { kind: 'analyze'; revision: number; tiles: TileState[]; nodeLimit: number }
-  | { kind: 'hint'; revision: number; requestId: number; tiles: TileState[]; nodeLimit: number; avoidStateHashes?: string[] }
-  | { kind: 'shuffle'; revision: number; tiles: TileState[]; nodeLimit: number; seed: number; maxAttempts: number };
+  | { kind: 'analyze'; revision: number; tiles: TileState[]; playRule?: PlayRule; tray?: TileState[]; nodeLimit: number }
+  | { kind: 'hint'; revision: number; requestId: number; tiles: TileState[]; playRule?: PlayRule; tray?: TileState[]; nodeLimit: number; avoidStateHashes?: string[] }
+  | { kind: 'shuffle'; revision: number; tiles: TileState[]; playRule?: PlayRule; tray?: TileState[]; nodeLimit: number; seed: number; maxAttempts: number };
 self.onmessage = ({ data }: MessageEvent<Request>) => {
   const result = data.kind === 'shuffle'
-    ? createCertifiedShuffle(data.tiles, data.seed, data.maxAttempts, data.nodeLimit)
-    : analyzeBoard(data.tiles, data.nodeLimit, data.kind === 'hint' ? data.avoidStateHashes ?? [] : []);
+    ? createCertifiedShuffle(data.tiles, data.seed, data.maxAttempts, data.nodeLimit, data.playRule, data.tray)
+    : data.playRule === 'tray' ? analyzeTrayBoard(data.tiles, data.tray, data.nodeLimit)
+      : analyzeBoard(data.tiles, data.nodeLimit, data.kind === 'hint' ? data.avoidStateHashes ?? [] : []);
   self.postMessage({
     kind: data.kind,
     revision: data.revision,

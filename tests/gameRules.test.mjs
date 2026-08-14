@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyzeBoard, createCertifiedShuffle, createFaceDownFlags, findSolvableRemovalOrder, generateSolvableTypes, getAvailableActions, getAvailablePairs, hasAvailableAction, hasAvailablePair, isClear, isFreeTile, isStuck, isTileUncovered, removePair, resetTiles, shuffleActiveTypes } from '../.test-dist/GameRules.js';
+import { analyzeBoard, analyzeTrayBoard, createCertifiedShuffle, createFaceDownFlags, findSolvableRemovalOrder, generateSolvableTypes, getAvailableActions, getAvailablePairs, getTrayMoves, hasAvailableAction, hasAvailablePair, isClear, isFreeTile, isStuck, isTileUncovered, isTrayGameOver, moveTileToTray, removePair, resetTiles, shuffleActiveTypes, TRAY_CAPACITY } from '../.test-dist/GameRules.js';
 import { COMPACT_LAYOUT, COMPACT_POSITIONS, TILE_PAIR_FACES, DIFFICULTIES, createSolvableDeal, createSolvableLayout } from '../.test-dist/BoardLayout.js';
 
 const row = (types) => types.map((type, id) => ({ id, type, x: id * 2, y: 0, z: 0, removed: false }));
@@ -39,6 +39,25 @@ test('face-down tiles use the same free rule but never expose a hint or match', 
 
 test('visible free pair is progress without a reveal', () => {
   assert.equal(getAvailableActions(row(['a', 'b', 'b', 'a']))[0].kind, 'pair');
+});
+
+test('tray holds five unmatched tiles, auto-removes a pair, and accepts a full rescue match', () => {
+  const tiles = row(['a', 'b', 'c', 'd', 'e', 'a']); tiles.forEach((tile, id) => { tile.x = id * 3; }); let tray = [];
+  for (const id of [0, 1, 2, 3, 4]) tray = moveTileToTray(tiles[id], tiles, tray);
+  assert.equal(tray.length, TRAY_CAPACITY);
+  assert.deepEqual(getTrayMoves(tiles, tray).map((tile) => tile.id), [5]);
+  tray = moveTileToTray(tiles[5], tiles, tray); assert.equal(tray.length, 4); assert.equal(tray.some((tile) => tile.type === 'a'), false);
+});
+
+test('full tray without a matching free tile is game over', () => {
+  const tiles = row(['z']); const tray = row(['a', 'b', 'c', 'd', 'e']).map((tile) => ({ ...tile, removed: true }));
+  assert.equal(isTrayGameOver(tiles, tray), true); assert.equal(moveTileToTray(tiles[0], tiles, tray), null);
+});
+
+test('tray solver includes held tiles and prefers their matching rescue', () => {
+  const tiles = row(['a']); const tray = [{ ...tiles[0], id: 99, removed: true }];
+  const result = analyzeTrayBoard(tiles, tray);
+  assert.equal(result.status, 'SOLVABLE'); assert.deepEqual(result.actions[0], { kind: 'tray', tileId: 0 });
 });
 
 test('revealing one hidden free tile is progress only when it matches a visible free tile', () => {
@@ -114,6 +133,7 @@ test('certified hidden deals retain a full solution under the one-reveal rule', 
       id, type, ...position, removed: false, faceDown: deal.faceDown[id], originallyFaceDown: deal.faceDown[id],
     }));
     assert.equal(analyzeBoard(tiles).solvable, true, `${difficulty} hidden deal must be solvable`);
+    assert.equal(analyzeTrayBoard(tiles, [], 1_000_000).solvable, true, `${difficulty} hidden deal must also be tray-solvable`);
   }
 });
 

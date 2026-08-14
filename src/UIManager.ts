@@ -1,4 +1,7 @@
 export class UIManager {
+  private readonly undoButton = document.querySelector<HTMLButtonElement>('#undo')!;
+  private readonly tray = document.querySelector<HTMLElement>('#tray')!;
+  private readonly traySlots = document.querySelector<HTMLElement>('#tray-slots')!;
   private readonly message = document.querySelector<HTMLElement>('#message')!;
   private readonly remaining = document.querySelector<HTMLElement>('#remaining')!;
   private readonly result = document.querySelector<HTMLElement>('#result')!;
@@ -30,7 +33,17 @@ export class UIManager {
   onRestart(handler: () => void): void { this.restartButtons.forEach((button) => button.addEventListener('click', handler)); }
   onHint(handler: () => void): void { this.hintButton.addEventListener('click', handler); }
   onShuffle(handler: () => void): void { this.shuffleButtons.forEach((button) => button.addEventListener('click', handler)); }
-  onUndo(handler: () => void): void { this.resultUndo.addEventListener('click', handler); }
+  onUndo(handler: () => void): void { this.resultUndo.addEventListener('click', handler); this.undoButton.addEventListener('click', handler); }
+  onPlayRule(handler: (rule: 'pair' | 'tray') => void): void {
+    document.querySelectorAll<HTMLButtonElement>('[data-rule]').forEach((button) => button.addEventListener('click', () => handler(button.dataset.rule as 'pair' | 'tray')));
+  }
+  renderPlayRule(rule: 'pair' | 'tray', trayTypes: readonly string[] = []): void {
+    document.querySelectorAll<HTMLButtonElement>('[data-rule]').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.rule === rule)));
+    this.tray.hidden = rule !== 'tray';
+    this.traySlots.replaceChildren(...Array.from({ length: 5 }, (_, index) => { const slot = document.createElement('span');
+      slot.className = 'tray-slot'; slot.textContent = trayTypes[index] ? trayTypes[index].replace(/[-_]/g, ' ') : ''; slot.toggleAttribute('data-filled', Boolean(trayTypes[index])); return slot; }));
+  }
+  setUndoEnabled(enabled: boolean): void { this.undoButton.disabled = !enabled; }
   onDifficulty(handler: (difficulty: 'easy' | 'normal' | 'hard') => void): void {
     this.difficultyButtons.forEach((button) => button.addEventListener('click', () => handler(button.dataset.difficulty as 'easy' | 'normal' | 'hard')));
   }
