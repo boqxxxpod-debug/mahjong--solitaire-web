@@ -13,6 +13,13 @@ export class UIManager {
   private readonly restartButtons = document.querySelectorAll<HTMLButtonElement>('[data-restart]');
   private readonly difficultyButtons = document.querySelectorAll<HTMLButtonElement>('[data-difficulty]');
   private readonly difficulty = document.querySelector<HTMLElement>('#difficulty')!;
+  private readonly modeMenu = document.querySelector<HTMLButtonElement>('#mode-menu')!;
+  private readonly modeSheet = document.querySelector<HTMLElement>('#mode-sheet')!;
+  private readonly stageList = document.querySelector<HTMLElement>('#stage-list')!;
+  private readonly replayButton = document.querySelector<HTMLButtonElement>('#replay-deal')!;
+  private readonly newDealButton = document.querySelector<HTMLButtonElement>('#new-deal')!;
+  private readonly nextStageButton = document.querySelector<HTMLButtonElement>('#next-stage')!;
+  private readonly resultRestart = document.querySelector<HTMLButtonElement>('#result-restart')!;
   private startedAt = 0;
   private elapsed = 0;
   private timer?: number;
@@ -27,6 +34,21 @@ export class UIManager {
   onDifficulty(handler: (difficulty: 'easy' | 'normal' | 'hard') => void): void {
     this.difficultyButtons.forEach((button) => button.addEventListener('click', () => handler(button.dataset.difficulty as 'easy' | 'normal' | 'hard')));
   }
+  onModeMenu(handler: () => void): void { this.modeMenu.addEventListener('click', handler); document.querySelector('#close-mode')!.addEventListener('click', () => this.hideModeSheet()); }
+  onClassic(handler: () => void): void { document.querySelector('#choose-classic')!.addEventListener('click', handler); }
+  onStage(handler: (stage: 'gate' | 'tower' | 'bridge' | 'dragon') => void): void {
+    this.stageList.addEventListener('click', (event) => { const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-stage]'); if (button && !button.disabled) handler(button.dataset.stage as 'gate' | 'tower' | 'bridge' | 'dragon'); });
+  }
+  onReplay(handler: () => void): void { this.replayButton.addEventListener('click', handler); }
+  onNewDeal(handler: () => void): void { this.newDealButton.addEventListener('click', handler); }
+  onNextStage(handler: () => void): void { this.nextStageButton.addEventListener('click', handler); }
+  showModeSheet(): void { this.modeSheet.inert = false; this.modeSheet.setAttribute('aria-hidden', 'false'); window.setTimeout(() => this.modeSheet.querySelector<HTMLButtonElement>('button')?.focus(), 0); }
+  hideModeSheet(): void { this.modeSheet.inert = true; this.modeSheet.setAttribute('aria-hidden', 'true'); this.modeMenu.focus(); }
+  renderMode(mode: 'classic' | 'tour', stages: readonly { id: string; label: string; description: string; unlocked: boolean; completed: boolean; prerequisite?: string }[], currentStage?: string): void {
+    this.modeMenu.textContent = mode === 'classic' ? 'CLASSIC ▾' : 'TOUR ▾';
+    document.querySelector<HTMLElement>('.difficulty-picker')!.hidden = mode === 'tour';
+    this.stageList.replaceChildren(...stages.map((stage, index) => { const button = document.createElement('button'); button.className = 'stage-button'; button.dataset.stage = stage.id; button.disabled = !stage.unlocked; button.setAttribute('aria-pressed', String(mode === 'tour' && currentStage === stage.id)); button.setAttribute('aria-label', `${index + 1}. ${stage.label}. ${stage.completed ? 'Completed' : stage.unlocked ? 'Unlocked' : `Locked. Clear ${stage.prerequisite}`}`); button.innerHTML = `<b>${index + 1}. ${stage.label}${stage.completed ? ' ✓' : ''}</b><small>${stage.unlocked ? stage.description : `LOCKED · Clear ${stage.prerequisite}`}</small>`; return button; }));
+  }
   updateDifficulty(value: 'easy' | 'normal' | 'hard', hints: number | null, shuffles: number | null): void {
     const label = value.toUpperCase();
     this.difficulty.textContent = label;
@@ -38,23 +60,34 @@ export class UIManager {
       button.textContent = this.shuffling ? 'SHUFFLING...' : `SHUFFLE ${shuffles === null ? '∞' : shuffles}`;
     });
   }
+  updateTourLimits(label: string, hints: number | null, shuffles: number | null): void {
+    this.difficulty.textContent = label.toUpperCase(); this.hintButton.disabled = hints === 0;
+    this.hintButton.textContent = `HINT ${hints === null ? '∞' : hints}`;
+    this.shuffleButtons.forEach((button) => { button.toggleAttribute('disabled', shuffles === 0 || this.shuffling); button.textContent = this.shuffling ? 'SHUFFLING...' : `SHUFFLE ${shuffles === null ? '∞' : shuffles}`; });
+  }
   setShuffling(active: boolean, difficulty: 'easy' | 'normal' | 'hard', hints: number | null, shuffles: number | null): void {
     this.shuffling = active; this.updateDifficulty(difficulty, hints, shuffles);
   }
   updateMoves(count: number): void { this.moves.textContent = String(count); }
   showClear(moves: number): void {
     this.stopTimer();
+    this.resultRestart.hidden = false; this.replayButton.hidden = true; this.newDealButton.hidden = true; this.nextStageButton.hidden = true;
     this.resultShuffle.hidden = true; this.resultUndo.hidden = true;
     this.showResult('CLEAR', `クリアタイム ${this.formatTime(this.elapsed)} ・ ${moves}手`);
+  }
+  showTourClear(moves: number, hasNext: boolean): void {
+    this.showClear(moves); this.resultRestart.hidden = true; this.replayButton.hidden = false; this.newDealButton.hidden = false; this.nextStageButton.hidden = !hasNext;
   }
   showNoMoves(canShuffle: boolean): void {
     this.showStuck(canShuffle, false);
   }
   showStuck(canShuffle: boolean, canUndo = true): void {
+    this.resultRestart.hidden = false; this.replayButton.hidden = true; this.newDealButton.hidden = true; this.nextStageButton.hidden = true;
     this.resultShuffle.hidden = !canShuffle; this.resultUndo.hidden = !canUndo;
     this.showResult('STUCK', 'この盤面からクリアできません。安全な手まで戻るか、救済操作を選んでください');
   }
   reset(count: number): void {
+    this.resultRestart.hidden = false; this.replayButton.hidden = true; this.newDealButton.hidden = true; this.nextStageButton.hidden = true;
     this.startTimer(0); this.updateMoves(0);
     this.updateRemaining(count);
     this.hideResult();

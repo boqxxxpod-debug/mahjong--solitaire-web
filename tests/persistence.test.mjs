@@ -7,12 +7,17 @@ const tiles = Array.from({ length: 36 }, (_, id) => ({
   removed: false, faceDown: false, originallyFaceDown: false,
 }));
 const valid = {
-  version: SAVE_SCHEMA_VERSION, savedAt: 123, difficulty: 'easy', tiles, initialTiles: tiles,
+  version: SAVE_SCHEMA_VERSION, mode: 'classic', savedAt: 123, difficulty: 'easy', tiles, initialTiles: tiles,
   moves: 0, hints: null, shuffles: null, history: [], safe: null, elapsedMs: 456,
 };
 
 test('valid versioned saves are accepted', () => {
   assert.deepEqual(parseSavedGame(JSON.stringify(valid)), valid);
+});
+
+test('schema 1 Classic saves migrate without adding closed-page time', () => {
+  const legacy = { ...valid, version: 1 }; delete legacy.mode;
+  assert.deepEqual(parseSavedGame(JSON.stringify(legacy)), { ...legacy, version: 2, mode: 'classic' });
 });
 
 test('corrupt, unknown, and inconsistent saves are rejected', () => {

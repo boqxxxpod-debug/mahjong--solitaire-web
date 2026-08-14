@@ -16,12 +16,18 @@
         </div>
         <div class="hud-actions">
           <div class="stats"><div class="counter"><b id="remaining">44</b><small> TILES</small></div><div class="counter difficulty-counter"><b id="difficulty">NORMAL</b><small> LEVEL</small></div><div class="counter"><b id="time">00:00</b><small> TIME</small></div><div class="counter"><b id="moves">0</b><small> MOVES</small></div></div>
-          <div class="difficulty-picker" aria-label="難易度選択"><button data-difficulty="easy">EASY</button><button data-difficulty="normal" aria-pressed="true">NORMAL</button><button data-difficulty="hard">HARD</button></div>
+          <div class="mode-row"><button id="mode-menu" aria-haspopup="dialog">CLASSIC ▾</button><div class="difficulty-picker" aria-label="難易度選択"><button data-difficulty="easy">EASY</button><button data-difficulty="normal" aria-pressed="true">NORMAL</button><button data-difficulty="hard">HARD</button></div></div>
           <div class="buttons"><button id="hint">HINT</button><button data-shuffle>SHUFFLE</button><button data-restart>RESTART</button></div>
         </div>
       </header>
       <div id="message" role="status" aria-live="polite" aria-atomic="true">同じ牌を2枚選んでください</div>
-      <div id="result" class="clear" role="dialog" aria-modal="true" aria-labelledby="result-title" aria-describedby="result-detail" aria-hidden="true" inert><span id="result-title">CLEAR</span><small id="result-detail">盤面をすべて片付けました</small><div class="result-actions"><button id="result-undo" class="restart-result" hidden>安全な手まで戻る</button><button id="result-shuffle" class="restart-result" data-shuffle>SHUFFLE</button><button class="restart-result" data-restart>もう一度遊ぶ</button></div></div>
+      <div id="result" class="clear" role="dialog" aria-modal="true" aria-labelledby="result-title" aria-describedby="result-detail" aria-hidden="true" inert><span id="result-title">CLEAR</span><small id="result-detail">盤面をすべて片付けました</small><div class="result-actions"><button id="result-undo" class="restart-result" hidden>安全な手まで戻る</button><button id="result-shuffle" class="restart-result" data-shuffle>SHUFFLE</button><button id="result-restart" class="restart-result" data-restart>もう一度遊ぶ</button><button id="replay-deal" class="restart-result" hidden>REPLAY SAME DEAL</button><button id="new-deal" class="restart-result" hidden>NEW DEAL</button><button id="next-stage" class="restart-result" hidden>NEXT STAGE</button></div></div>
+      <section id="mode-sheet" class="mode-sheet" role="dialog" aria-modal="true" aria-labelledby="mode-title" aria-hidden="true" inert>
+        <div class="mode-card"><div class="sheet-heading"><div><p class="eyebrow">PLAY MODE</p><h2 id="mode-title">Choose a game</h2></div><button id="close-mode" aria-label="選択画面を閉じる">CLOSE</button></div>
+          <button id="choose-classic" class="mode-choice"><b>CLASSIC</b><small>EASY / NORMAL / HARD</small></button>
+          <h3>DIORAMA TOUR</h3><div id="stage-list" class="stage-list"></div>
+        </div>
+      </section>
       <canvas id="game-canvas" aria-label="3D麻雀牌のゲーム盤"></canvas>
       <pre id="debug-overlay" role="alert" hidden></pre>
       <footer>FREE TILE <i></i> 上に牌がなく、左右どちらかが空いている牌<br><span>裏向きのFREE TILEはタップすると表になります</span></footer>
