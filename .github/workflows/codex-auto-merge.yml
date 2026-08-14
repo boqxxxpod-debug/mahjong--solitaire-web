@@ -1,19 +1,19 @@
-name: Codex Auto Merge
+name: Codex Merge Eligibility
 
 on:
   pull_request_target:
     types: [opened, reopened, synchronize, labeled, unlabeled, ready_for_review]
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
+  pull-requests: read
 
 concurrency:
-  group: codex-auto-merge-${{ github.event.pull_request.number }}
+  group: codex-merge-eligibility-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
-  enable-auto-merge:
+  validate-external-merge-eligibility:
     if: >-
       !github.event.pull_request.draft &&
       startsWith(github.event.pull_request.head.ref, 'codex/') &&
@@ -27,22 +27,16 @@ jobs:
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
         run: |
-          if [ "$(gh api "repos/$REPO" --jq '.allow_auto_merge')" != 'true' ]; then
-            echo 'Repository auto-merge is disabled; the external orchestrator will stop or use its authenticated fallback.'
-            echo 'eligible=false' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
           labels="$(gh api "repos/$REPO/issues/$PR" --jq '[.labels[].name] | join("\n")')"
 
           if ! grep -Fxq 'codex' <<< "$labels"; then
-            echo 'Codex label is missing; skipping auto-merge.'
+            echo 'Codex label is missing; external merge is not eligible.'
             echo 'eligible=false' >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           if grep -Fxq 'manual-review' <<< "$labels"; then
-            echo 'manual-review label is present; skipping auto-merge.'
+            echo 'manual-review label is present; external merge is not eligible.'
             echo 'eligible=false' >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -68,10 +62,11 @@ jobs:
 
           echo 'safe=true' >> "$GITHUB_OUTPUT"
 
-      - name: Enable GitHub auto-merge
+      - name: Report eligibility to the external orchestrator
         if: steps.eligibility.outputs.eligible == 'true' && steps.paths.outputs.safe == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          PR: ${{ github.event.pull_request.number }}
-        run: gh pr merge "$PR" --repo "$REPO" --auto --squash
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          echo "Eligible head SHA: $HEAD_SHA"
+          echo 'GitHub Actions will not merge or reserve auto-merge for this pull request.'
+          echo 'The externally authenticated orchestrator must revalidate this exact head SHA and perform the merge.'
