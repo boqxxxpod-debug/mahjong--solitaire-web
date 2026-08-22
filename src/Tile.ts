@@ -109,6 +109,11 @@ export class Tile {
     this.feedbackTimer = window.setTimeout(() => this.setSelected(this.selected), kind === 'hint' ? 2200 : 260);
   }
 
+  clearFeedback(): void {
+    window.clearTimeout(this.feedbackTimer); this.feedbackTimer = undefined;
+    this.setSelected(this.selected);
+  }
+
   private materials(): THREE.MeshStandardMaterial[] {
     return (this.mesh.material as THREE.Material[]).filter((material): material is THREE.MeshStandardMaterial =>
       material instanceof THREE.MeshStandardMaterial);

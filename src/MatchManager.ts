@@ -2,6 +2,7 @@ import { BoardManager } from './BoardManager';
 import { Tile } from './Tile';
 import { UIManager } from './UIManager';
 import { DIFFICULTIES, Difficulty } from './BoardLayout';
+import { boardStateHash } from './GameRules';
 import type { CertifiedShuffleResult, SearchResult, TileState } from './GameRules';
 
 interface Snapshot { tiles: TileState[]; moves: number; history: Array<{ tiles: TileState[]; moves: number }> }
@@ -21,6 +22,8 @@ export class MatchManager {
   private checkingTimer?: number;
   private searchTimer?: number;
   private shuffling = false;
+  private hintRequestId = 0;
+  private hintTiles: Tile[] = [];
 
   constructor(private readonly board: BoardManager, private readonly ui: UIManager) {
     this.ui.onRestart(() => this.restart()); this.ui.onHint(() => this.hint());
@@ -31,11 +34,15 @@ export class MatchManager {
 
   select(tile: Tile): void {
     if (this.flipping || this.stuck) return;
+    // A tap is user intent: cancel pending analysis so it cannot repaint this
+    // newly selected state, even when the logical board hash is unchanged.
+    if (this.worker) this.invalidateSearch(); else this.clearHint();
     if (!this.board.isFree(tile)) { tile.flash('blocked'); this.ui.showMessage('この牌はまだ取得できません', true); return; }
-    if (tile.faceDown) { this.recordHistory(); void this.revealFaceDown(tile); return; }
+    if (tile.faceDown) { this.invalidateSearch(); this.recordHistory(); void this.revealFaceDown(tile); return; }
     if (tile === this.selected) { tile.setSelected(false); this.selected = null; this.ui.showMessage('同じ牌を2枚選んでください'); return; }
     if (!this.selected) { tile.setSelected(true); this.selected = tile; this.ui.showMessage('同じ絵柄の牌を選んでください'); return; }
     if (this.selected.type === tile.type) {
+      this.invalidateSearch();
       this.recordHistory();
       const first = this.selected; this.selected.setSelected(false);
       this.board.remove(this.selected); this.board.remove(tile); this.selected = null;
@@ -70,10 +77,58 @@ export class MatchManager {
 
   private hint(): void {
     if (this.hints === 0 || this.stuck) return;
-    const action = this.board.getHint(); if (!action) { this.checkProgress(); return; }
-    if (this.hints !== null) this.hints--; this.ui.updateDifficulty(this.board.difficulty, this.hints, this.shuffles);
-    if (action.kind === 'pair') { action.tiles[0].flash('hint'); action.tiles[1].flash('hint'); this.ui.showMessage('取れるペアをハイライトしました'); }
-    else { action.tile.flash('hint'); this.ui.showMessage('めくれる裏向き牌をハイライトしました'); }
+    this.invalidateSearch(); this.clearHint();
+    this.selected?.setSelected(false); this.selected = null;
+    const revision = ++this.revision, requestId = ++this.hintRequestId;
+    const tiles = this.board.states(), expectedHash = boardStateHash(tiles);
+    const worker = new Worker(new URL('./solver.worker.ts', import.meta.url), { type: 'module' }); this.worker = worker;
+    this.ui.setHinting(true, this.board.difficulty, this.hints, this.shuffles);
+    this.checkingTimer = window.setTimeout(() => {
+      if (revision === this.revision && requestId === this.hintRequestId) this.ui.showMessage('安全な手を確認しています…');
+    }, 120);
+    this.searchTimer = window.setTimeout(() => {
+      if (revision !== this.revision || requestId !== this.hintRequestId) return;
+      worker.terminate(); this.worker = undefined;
+      this.finishHint(revision, requestId, expectedHash, undefined);
+    }, 5000);
+    worker.onmessage = ({ data }: MessageEvent<{ revision: number; requestId?: number; result: SearchResult }>) => {
+      if (data.revision !== revision || revision !== this.revision || data.requestId !== requestId) return;
+      window.clearTimeout(this.searchTimer); worker.terminate(); this.worker = undefined;
+      this.finishHint(revision, requestId, expectedHash, data.result);
+    };
+    worker.onerror = () => {
+      if (revision !== this.revision || requestId !== this.hintRequestId) return;
+      window.clearTimeout(this.searchTimer); worker.terminate(); this.worker = undefined;
+      this.finishHint(revision, requestId, expectedHash, undefined);
+    };
+    worker.postMessage({ kind: 'hint', revision, requestId, tiles, nodeLimit: 1_000_000 });
+  }
+
+  private finishHint(revision: number, requestId: number, expectedHash: string, result?: SearchResult): void {
+    if (revision !== this.revision || requestId !== this.hintRequestId || boardStateHash(this.board.states()) !== expectedHash) return;
+    window.clearTimeout(this.checkingTimer);
+    this.ui.setHinting(false, this.board.difficulty, this.hints, this.shuffles);
+    const next = result?.status === 'SOLVABLE' && result.stateHash === expectedHash ? result.actions[0] : undefined;
+    if (!next) {
+      if (result?.status === 'UNSOLVABLE') { this.stuck = true; this.ui.showStuck(this.shuffles !== 0, Boolean(this.safe)); }
+      else this.ui.showMessage('安全な手を確認できませんでした', true);
+      return;
+    }
+    const targets = next.kind === 'pair' ? next.tileIds.map((id) => this.board.tiles[id]) : [this.board.tiles[next.tileId]];
+    if (targets.some((tile) => !tile || tile.removed || !this.board.isFree(tile)) ||
+      (next.kind === 'pair' && (targets.some((tile) => tile.faceDown) || targets[0].type !== targets[1].type)) ||
+      (next.kind === 'reveal' && !targets[0].faceDown)) {
+      this.ui.showMessage('安全な手を確認できませんでした', true); return;
+    }
+    this.hintTiles = targets; targets.forEach((tile) => tile.flash('hint'));
+    if (this.hints !== null) this.hints--;
+    this.ui.updateDifficulty(this.board.difficulty, this.hints, this.shuffles);
+    this.ui.showMessage(next.kind === 'pair' ? '安全なペアをハイライトしました' : '安全にめくれる裏向き牌を示しました');
+  }
+
+  private clearHint(): void {
+    this.hintRequestId++;
+    this.hintTiles.forEach((tile) => tile.clearFeedback()); this.hintTiles = [];
   }
 
   private shuffle(): void {
@@ -148,7 +203,7 @@ export class MatchManager {
     this.checkingTimer = window.setTimeout(() => { if (revision === this.revision) this.ui.showMessage('CHECKING...'); }, 120);
     this.searchTimer = window.setTimeout(() => {
       if (revision !== this.revision) return; worker.terminate(); this.worker = undefined;
-      this.applySearchResult(revision, candidate, { status: 'UNKNOWN', solvable: false, canRemovePair: false, visitedStates: 0, cycleStates: 0, maxDepth: 0, removalPairs: 0, revealMoves: 0 });
+      this.applySearchResult(revision, candidate, { status: 'UNKNOWN', solvable: false, canRemovePair: false, visitedStates: 0, cycleStates: 0, maxDepth: 0, removalPairs: 0, revealMoves: 0, actions: [], stateHash: boardStateHash(candidate.tiles) });
     }, 3000);
     worker.onmessage = ({ data }: MessageEvent<{ revision: number; result: SearchResult }>) => {
       if (data.revision !== this.revision || data.revision !== revision) return;
@@ -165,8 +220,9 @@ export class MatchManager {
   }
 
   private invalidateSearch(): void {
-    this.revision++; this.worker?.terminate(); this.worker = undefined;
+    this.revision++; this.clearHint(); this.worker?.terminate(); this.worker = undefined;
     window.clearTimeout(this.checkingTimer); window.clearTimeout(this.searchTimer);
     if (this.shuffling) { this.shuffling = false; this.ui.setShuffling(false, this.board.difficulty, this.hints, this.shuffles); }
+    this.ui.setHinting(false, this.board.difficulty, this.hints, this.shuffles);
   }
 }

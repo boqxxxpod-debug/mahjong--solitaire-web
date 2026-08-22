@@ -16,6 +16,9 @@ export type AvailableAction<T = TileState> =
   | { kind: 'reveal'; tile: T };
 
 export type SearchStatus = 'CLEAR' | 'SOLVABLE' | 'UNSOLVABLE' | 'UNKNOWN';
+export type SearchAction =
+  | { kind: 'pair'; tileIds: readonly [number, number] }
+  | { kind: 'reveal'; tileId: number };
 export interface SearchResult {
   status: SearchStatus;
   solvable: boolean;
@@ -25,6 +28,9 @@ export interface SearchResult {
   maxDepth: number;
   removalPairs: number;
   revealMoves: number;
+  /** A cycle-free witness whose replay reaches CLEAR. Empty unless proven. */
+  actions: SearchAction[];
+  stateHash: string;
 }
 
 export interface CertifiedShuffleResult {
@@ -96,6 +102,7 @@ export function analyzeBoard(initial: readonly TileState[], nodeLimit = 1_000_00
   for (const tile of tiles) if (originalHidden.has(tile.id) && tile.faceDown === false) initialRevealed = tile.id;
   const visited = new Set<string>();
   let cycles = 0, maxDepth = 0, bestRemaining = initiallyActive, solutionPairs = 0, solutionReveals = 0, limitReached = false;
+  let solution: SearchAction[] = [];
 
   const visit = (removed: Set<number>, revealed: number, depth: number, pairs: number, reveals: number): boolean => {
     if (visited.size >= nodeLimit) { limitReached = true; return false; }
@@ -109,11 +116,15 @@ export function analyzeBoard(initial: readonly TileState[], nodeLimit = 1_000_00
 
     for (const [first, second] of getAvailablePairs(state)) {
       const next = new Set(removed); next.add(first.id); next.add(second.id);
-      if (visit(next, revealed === first.id || revealed === second.id ? -1 : revealed, depth + 1, pairs + 1, reveals)) return true;
+      if (visit(next, revealed === first.id || revealed === second.id ? -1 : revealed, depth + 1, pairs + 1, reveals)) {
+        solution.unshift({ kind: 'pair', tileIds: [first.id, second.id] }); return true;
+      }
     }
     // Reveals are legal even when they do not immediately make a pair.
     for (const tile of state) if (tile.faceDown && isFreeTile(tile, state)) {
-      if (visit(removed, tile.id, depth + 1, pairs, reveals + 1)) return true;
+      if (visit(removed, tile.id, depth + 1, pairs, reveals + 1)) {
+        solution.unshift({ kind: 'reveal', tileId: tile.id }); return true;
+      }
     }
     return false;
   };
@@ -125,7 +136,14 @@ export function analyzeBoard(initial: readonly TileState[], nodeLimit = 1_000_00
     status: initiallyActive === 0 ? 'CLEAR' : solvable ? 'SOLVABLE' : limitReached ? 'UNKNOWN' : 'UNSOLVABLE',
     solvable, canRemovePair, visitedStates: visited.size, cycleStates: cycles, maxDepth,
     removalPairs: solutionPairs, revealMoves: solutionReveals,
+    actions: solvable ? solution : [], stateHash: boardStateHash(initial),
   };
+}
+
+/** Stable public-board identity used to reject delayed worker results. */
+export function boardStateHash(tiles: readonly TileState[]): string {
+  return [...tiles].sort((a, b) => a.id - b.id)
+    .map((tile) => `${tile.id}:${tile.type}:${tile.removed ? 1 : 0}:${tile.faceDown ? 1 : 0}`).join('|');
 }
 
 /**

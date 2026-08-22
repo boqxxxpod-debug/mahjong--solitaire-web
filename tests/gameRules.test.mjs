@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyzeBoard, createCertifiedShuffle, createFaceDownFlags, findSolvableRemovalOrder, generateSolvableTypes, getAvailableActions, getAvailablePairs, hasAvailableAction, hasAvailablePair, isClear, isFreeTile, isStuck, isTileUncovered, removePair, resetTiles, shuffleActiveTypes } from '../.test-dist/GameRules.js';
+import { analyzeBoard, boardStateHash, createCertifiedShuffle, createFaceDownFlags, findSolvableRemovalOrder, generateSolvableTypes, getAvailableActions, getAvailablePairs, hasAvailableAction, hasAvailablePair, isClear, isFreeTile, isStuck, isTileUncovered, removePair, resetTiles, shuffleActiveTypes } from '../.test-dist/GameRules.js';
 import { COMPACT_LAYOUT, COMPACT_POSITIONS, TILE_PAIR_FACES, DIFFICULTIES, createSolvableDeal, createSolvableLayout } from '../.test-dist/BoardLayout.js';
 
 const row = (types) => types.map((type, id) => ({ id, type, x: id * 2, y: 0, z: 0, removed: false }));
@@ -103,6 +103,29 @@ test('state search sees progress after one or multiple reveals and finds a clear
   assert.equal(result.status, 'SOLVABLE');
   assert.equal(result.solvable, true);
   assert.equal(result.removalPairs, 2);
+});
+
+test('solver returns a legal, cycle-free witness and never certifies UNKNOWN', () => {
+  const tiles = row(['a', 'b', 'b', 'a']);
+  tiles[1].faceDown = tiles[1].originallyFaceDown = true;
+  const result = analyzeBoard(tiles);
+  assert.equal(result.status, 'SOLVABLE');
+  assert.equal(result.stateHash, boardStateHash(tiles));
+  assert.ok(result.actions.length > 0);
+  const seen = new Set([boardStateHash(tiles)]);
+  for (const action of result.actions) {
+    if (action.kind === 'pair') {
+      assert.equal(removePair(tiles[action.tileIds[0]], tiles[action.tileIds[1]], tiles), true);
+    } else {
+      const target = tiles[action.tileId];
+      assert.equal(target.faceDown && isFreeTile(target, tiles), true);
+      for (const tile of tiles) if (tile.originallyFaceDown) tile.faceDown = tile.id !== target.id;
+    }
+    const hash = boardStateHash(tiles); assert.equal(seen.has(hash), false); seen.add(hash);
+  }
+  assert.equal(isClear(tiles), true);
+  const unknown = analyzeBoard(row(['a', 'a']), 0);
+  assert.equal(unknown.status, 'UNKNOWN'); assert.deepEqual(unknown.actions, []);
 });
 
 test('certified hidden deals retain a full solution under the one-reveal rule', () => {
