@@ -17,6 +17,7 @@ export class UIManager {
   private elapsed = 0;
   private timer?: number;
   private shuffling = false;
+  private hinting = false;
 
   updateRemaining(count: number): void { this.remaining.textContent = String(count); }
   showMessage(text: string, error = false): void { this.message.textContent = text; this.message.classList.toggle('error', error); }
@@ -31,12 +32,15 @@ export class UIManager {
     const label = value.toUpperCase();
     this.difficulty.textContent = label;
     this.difficultyButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.difficulty === value)));
-    this.hintButton.disabled = hints === 0;
+    this.hintButton.disabled = hints === 0 || this.hinting;
     this.hintButton.textContent = `HINT ${hints === null ? '∞' : hints}`;
     this.shuffleButtons.forEach((button) => {
       button.toggleAttribute('disabled', shuffles === 0 || this.shuffling);
       button.textContent = this.shuffling ? 'SHUFFLING...' : `SHUFFLE ${shuffles === null ? '∞' : shuffles}`;
     });
+  }
+  setHinting(active: boolean, difficulty: 'easy' | 'normal' | 'hard', hints: number | null, shuffles: number | null): void {
+    this.hinting = active; this.updateDifficulty(difficulty, hints, shuffles);
   }
   setShuffling(active: boolean, difficulty: 'easy' | 'normal' | 'hard', hints: number | null, shuffles: number | null): void {
     this.shuffling = active; this.updateDifficulty(difficulty, hints, shuffles);
