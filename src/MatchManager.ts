@@ -109,7 +109,7 @@ export class MatchManager {
     if (this.moves > 0 && !window.confirm('現在のゲームを終了してプレイルールを切り替えますか？')) return;
     this.playRule = rule; try { localStorage.setItem('mahjong-solitaire.play-rule.v1', rule); } catch { /* optional */ }
     this.unlocked = new Set(['gate']); this.completed.clear(); this.loadProgression(); this.renderMode();
-    this.ui.hideModeSheet(); this.restart();
+    this.ui.hideModeSheet(); this.restart(); window.dispatchEvent(new Event('resize'));
     if (rule === 'tray') { try { if (!localStorage.getItem('mahjong-solitaire.tray-intro.v1')) { this.ui.showMessage('FREE TILEを5枠へ。同じ牌2枚で自動消去します'); localStorage.setItem('mahjong-solitaire.tray-intro.v1', '1'); } } catch { /* optional */ } }
   }
 

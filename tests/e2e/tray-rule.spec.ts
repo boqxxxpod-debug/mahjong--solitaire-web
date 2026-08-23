@@ -1,5 +1,37 @@
 import { expect, test } from '@playwright/test';
 
+for (const viewport of [{ width: 390, height: 844 }, { width: 844, height: 390 }, { width: 938, height: 771 }]) {
+  test(`tray keeps the projected board clear at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await page.goto(`/?seed=tray-clearance-${viewport.width}x${viewport.height}`);
+    await page.locator('#mode-menu').click(); await page.locator('[data-rule="tray"]').click();
+    await expect(page.locator('#tray')).toBeVisible();
+
+    const boardTrayGap = () => page.evaluate(() => {
+      const game = (window as typeof window & { __mahjongGameTest: any }).__mahjongGameTest;
+      const bounds = game.board.getBounds();
+      const canvas = document.querySelector<HTMLCanvasElement>('#game-canvas')!.getBoundingClientRect();
+      const tray = document.querySelector<HTMLElement>('#tray')!.getBoundingClientRect();
+      const projectedBottom = [bounds.min.x, bounds.max.x].flatMap((x) =>
+        [bounds.min.y, bounds.max.y].flatMap((y) =>
+          [bounds.min.z, bounds.max.z].map((z) => {
+            const point = bounds.min.clone().set(x, y, z).project(game.camera);
+            return canvas.top + (1 - point.y) * canvas.height / 2;
+          })))
+        .reduce((bottom, y) => Math.max(bottom, y), -Infinity);
+      return tray.top - projectedBottom;
+    });
+    await expect.poll(boardTrayGap).toBeGreaterThanOrEqual(10);
+
+    if (viewport.width === 390) {
+      await page.reload(); await expect(page.locator('#tray')).toBeVisible();
+      await expect.poll(boardTrayGap).toBeGreaterThanOrEqual(10);
+    }
+
+    await page.screenshot({ path: `screenshots/tray-clearance-${viewport.width}x${viewport.height}.png`, fullPage: true });
+  });
+}
+
 test('tray rule switches independently, survives reload, prevents duplicate taps, and undo restores a match', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/'); await page.locator('#mode-menu').click(); await page.locator('[data-rule="tray"]').click();
