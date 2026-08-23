@@ -48,12 +48,12 @@ export class Game {
     const width = Math.max(1, Math.round(bounds.width));
     const height = Math.max(1, Math.round(bounds.height));
     this.camera.aspect = width / height;
-    this.fitCamera();
+    this.fitCamera(height);
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height, false);
   }
 
-  private fitCamera(): void {
+  private fitCamera(viewportHeight: number): void {
     const bounds = this.board.getBounds();
     const center = bounds.getCenter(new THREE.Vector3());
     const direction = new THREE.Vector3(0, 0.72, 0.69).normalize();
@@ -64,23 +64,48 @@ export class Game {
     const right = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0);
     const up = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 1);
     const forward = direction.clone();
+    const cornerOffsets: THREE.Vector3[] = [];
     let halfWidth = 0, halfHeight = 0, halfDepth = 0;
     for (const x of [bounds.min.x, bounds.max.x]) for (const y of [bounds.min.y, bounds.max.y]) for (const z of [bounds.min.z, bounds.max.z]) {
       const offset = new THREE.Vector3(x, y, z).sub(center);
+      cornerOffsets.push(offset);
       halfWidth = Math.max(halfWidth, Math.abs(offset.dot(right)));
       halfHeight = Math.max(halfHeight, Math.abs(offset.dot(up)));
       halfDepth = Math.max(halfDepth, Math.abs(offset.dot(forward)));
     }
     const verticalFov = THREE.MathUtils.degToRad(this.camera.fov / 2);
     const horizontalFov = Math.atan(Math.tan(verticalFov) * this.camera.aspect);
+    const usableHeight = this.usableBoardHeight(viewportHeight);
+    const usableHeightRatio = usableHeight / viewportHeight;
     // A small safe edge is enough for touch screens; the old 14% gutter made
     // the already fitted tiles needlessly small at narrow phone aspect ratios.
-    const distance = Math.max(halfWidth / Math.tan(horizontalFov), halfHeight / Math.tan(verticalFov)) * 1.05 + halfDepth;
-    this.camera.position.copy(center).addScaledVector(direction, distance);
+    const distance = Math.max(
+      halfWidth / Math.tan(horizontalFov),
+      halfHeight / (Math.tan(verticalFov) * usableHeightRatio),
+    ) * 1.05 + halfDepth;
+
+    // The tray is an HTML overlay, so it does not reduce the WebGL canvas size.
+    // Move the fitted view only as far as needed for its lowest projected
+    // corner to clear the tray, preserving the original pair-mode framing.
+    const lowestAllowedNdcY = 1 - 2 * usableHeight / viewportHeight;
+    const centerShift = cornerOffsets.reduce((requiredShift, offset) => {
+      const depth = distance - offset.dot(forward);
+      return Math.max(requiredShift, lowestAllowedNdcY * depth * Math.tan(verticalFov) - offset.dot(up));
+    }, 0);
+    const viewCenter = center.clone().addScaledVector(up, -centerShift);
+    this.camera.position.copy(viewCenter).addScaledVector(direction, distance);
     // Keep the fitted board inside the depth range too. This matters on narrow
     // phones where fitting a wide layout can place the camera beyond far=100.
-    this.camera.far = Math.max(100, distance + halfDepth + 10);
-    this.camera.lookAt(center);
+    this.camera.far = Math.max(100, Math.hypot(distance, centerShift) + halfDepth + 10);
+    this.camera.lookAt(viewCenter);
+  }
+
+  private usableBoardHeight(viewportHeight: number): number {
+    const tray = document.querySelector<HTMLElement>('#tray');
+    if (!tray || tray.hidden) return viewportHeight;
+    const canvasTop = this.renderer.domElement.getBoundingClientRect().top;
+    const trayTop = tray.getBoundingClientRect().top - canvasTop;
+    return THREE.MathUtils.clamp(trayTop - 12, 1, viewportHeight);
   }
 
   private animate = (): void => {
