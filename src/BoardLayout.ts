@@ -1,4 +1,4 @@
-import { findSolvableRemovalOrder, generateSolvableTypes, RandomSource, TilePosition } from './GameRules.js';
+import { analyzeBoard, findSolvableRemovalOrder, generateSolvableTypes, RandomSource, TilePosition, type TileState } from './GameRules.js';
 import { MAHJONG_FACES } from './TileCatalog.js';
 
 export type Difficulty = 'easy' | 'normal' | 'hard';
@@ -192,13 +192,40 @@ export function createSolvableDeal(difficulty: Difficulty = 'normal', random: Ra
   };
 }
 
+function pairOnlyStatus(positions: readonly TilePosition[], faces: readonly string[]): 'UNSOLVABLE' | 'OTHER' {
+  const tiles: TileState[] = positions.map((position, id) => ({
+    id, type: faces[id], ...position, removed: false, faceDown: false, originallyFaceDown: false,
+  }));
+  return analyzeBoard(tiles, 100_000).status === 'UNSOLVABLE' ? 'UNSOLVABLE' : 'OTHER';
+}
+
 /** A tray-only deal: higher difficulties deliberately separate matching faces
- * so the certified removal order requires temporary storage before matching. */
+ * and reject any layout that still has a complete pair-only solution. */
 export function createTrayChallengeDeal(difficulty: Difficulty = 'normal', random: RandomSource = Math.random): TrayChallengeDeal {
-  if (!DIFFICULTIES[difficulty].trayChallenge) return createSolvableDeal(difficulty, random);
-  const positions = DIFFICULTIES[difficulty].positions;
-  const order = difficulty === 'hard' ? HARD_REMOVAL_ORDER : findSolvableRemovalOrder(positions, random);
-  const faces = createTrayChallengeTypes(order, DIFFICULTIES[difficulty].trayCapacity, random);
+  const config = DIFFICULTIES[difficulty];
+  if (!config.trayChallenge) return createSolvableDeal(difficulty, random);
+  const positions = config.positions;
+  let order: Array<readonly [number, number]> | undefined;
+  let faces: string[] | undefined;
+
+  if (difficulty === 'hard') {
+    order = HARD_REMOVAL_ORDER;
+    faces = createTrayChallengeTypes(order, config.trayCapacity, random);
+  } else {
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const candidateOrder = findSolvableRemovalOrder(positions, random);
+      const candidateFaces = createTrayChallengeTypes(candidateOrder, config.trayCapacity, random);
+      if (pairOnlyStatus(positions, candidateFaces) === 'UNSOLVABLE') {
+        order = candidateOrder; faces = candidateFaces; break;
+      }
+    }
+    if (!order || !faces) {
+      order = findSolvableRemovalOrder(positions, () => 0.5);
+      faces = createTrayChallengeTypes(order, config.trayCapacity, () => 0.5);
+    }
+  }
+  if (pairOnlyStatus(positions, faces) !== 'UNSOLVABLE') throw new Error(`${difficulty} tray deal still has a pair-only solution`);
+
   const target = Math.round(positions.length * (difficulty === 'normal' ? 0.125 : 0.225));
   const candidates = order.map((pair) => pair[random() < 0.5 ? 0 : 1]);
   for (let index = candidates.length - 1; index > 0; index--) {

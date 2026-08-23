@@ -1,4 +1,5 @@
 import {
+  analyzeBoard,
   applySolverAction,
   boardStateHash,
   findSolvableRemovalOrder,
@@ -151,6 +152,8 @@ export function createDioramaTrayDeal(stageId: DioramaStageId, random: RandomSou
   if (!stage.trayChallenge) return createDioramaDeal(stageId, random);
   const order = removalOrder(stage);
   const types = createTrayChallengeTypes(order, stage.trayCapacity, random);
+  const pairOnlyTiles = buildTiles(stage, types, new Set<number>());
+  if (analyzeBoard(pairOnlyTiles, 100_000).status !== 'UNSOLVABLE') throw new Error(`${stageId} tray deal still has a pair-only solution`);
   const hidden = hiddenForStage(stage, order, random);
   const tiles = buildTiles(stage, types, hidden);
   const solution: SolverAction[] = [];

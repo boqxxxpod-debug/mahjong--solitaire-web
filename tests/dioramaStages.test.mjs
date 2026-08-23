@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyzeTrayBoard, boardStateHash, getAvailableActions, isFreeTile } from '../.test-dist/GameRules.js';
+import { analyzeBoard, analyzeTrayBoard, boardStateHash, getAvailableActions, isFreeTile } from '../.test-dist/GameRules.js';
 import { DIFFICULTIES, createTrayChallengeDeal } from '../.test-dist/BoardLayout.js';
 import { DIORAMA_STAGE_ORDER, DIORAMA_STAGES, createDioramaDeal, createDioramaTrayDeal, replayDioramaCertificate, replayDioramaTrayCertificate } from '../.test-dist/DioramaStages.js';
 
@@ -90,6 +90,8 @@ test('tray mode starts requiring temporary storage at higher difficulty', () => 
     const openingFaces = openingIds.map((id) => deal.layout[id].face);
     assert.equal(new Set(openingFaces).size, config.trayCapacity, `${difficulty} opens with ${config.trayCapacity} unmatched tray tiles`);
     assert.notEqual(deal.layout[deal.solution[0][0]].face, deal.layout[deal.solution[0][1]].face, `${difficulty} first free pair positions do not match`);
+    const pairOnlyTiles = deal.layout.map(({ face, ...position }, id) => ({ id, type: face, ...position, removed: false, faceDown: false, originallyFaceDown: false }));
+    assert.equal(analyzeBoard(pairOnlyTiles, 100_000).status, 'UNSOLVABLE', `${difficulty} cannot be cleared without the tray`);
   }
 
   for (const id of DIORAMA_STAGE_ORDER) {
@@ -104,6 +106,8 @@ test('tray mode starts requiring temporary storage at higher difficulty', () => 
     assert.equal(new Set(openingFaces).size, stage.trayCapacity, `${id} fills the tray with distinct temporary tiles before matches arrive`);
     assert.notEqual(deal.tiles[deal.removalPairs[0][0]].type, deal.tiles[deal.removalPairs[0][1]].type, `${id} does not expose the canonical pair as an immediate match`);
     assert.ok(deal.solution.some((action) => action.kind === 'tray'), `${id} has a tray certificate`);
+    const pairOnlyTiles = deal.tiles.map((tile) => ({ ...tile, faceDown: false, originallyFaceDown: false }));
+    assert.equal(analyzeBoard(pairOnlyTiles, 100_000).status, 'UNSOLVABLE', `${id} cannot be cleared without the tray`);
     assert.equal(replayDioramaTrayCertificate(deal.tiles, deal.solution, stage.trayCapacity), true, `${id} tray certificate clears safely`);
   }
 });
