@@ -10,9 +10,9 @@ import {
 } from './BoardGeometry';
 import { Tile } from './Tile';
 import { analyzeBoard, applySolverAction, boardStateHash, hasAvailableAction, isFreeTile, isTileUncovered } from './GameRules';
-import type { AvailableAction, SearchResult, SolverAction, TileState } from './GameRules';
-import { createSolvableDeal, DIFFICULTIES, Difficulty } from './BoardLayout';
-import { createDioramaDeal, DIORAMA_STAGES, type DioramaStageId } from './DioramaStages';
+import type { AvailableAction, PlayRule, SearchResult, SolverAction, TileState } from './GameRules';
+import { createSolvableDeal, createTrayChallengeDeal, DIFFICULTIES, Difficulty } from './BoardLayout';
+import { createDioramaDeal, createDioramaTrayDeal, DIORAMA_STAGES, type DioramaStageId } from './DioramaStages';
 import type { TilePosition } from './GameRules';
 
 function layoutBounds(positions: readonly TilePosition[]): THREE.Box3 {
@@ -42,6 +42,8 @@ export class BoardManager {
   private hintPlan: SolverAction[] = [];
   private hintPlanStateHash?: string;
   private hintPlanNextHash?: string;
+  private dealPlayRule: PlayRule = 'pair';
+  private currentDioramaStageId?: DioramaStageId;
 
   constructor(private readonly scene: THREE.Scene, public difficulty: Difficulty = 'normal') {
     const seed = new URLSearchParams(location.search).get('seed');
@@ -51,19 +53,24 @@ export class BoardManager {
 
   newDioramaDeal(stageId: DioramaStageId): void {
     const random = () => ((this.seedState = (this.seedState * 1664525 + 1013904223) >>> 0) / 2 ** 32);
-    const deal = createDioramaDeal(stageId, random);
+    const playRule = this.preferredPlayRule();
+    const deal = playRule === 'tray' ? createDioramaTrayDeal(stageId, random) : createDioramaDeal(stageId, random);
+    this.dealPlayRule = playRule; this.currentDioramaStageId = stageId;
     this.replaceTiles(deal.tiles);
   }
 
   restoreDioramaGeometry(stageId: DioramaStageId): void {
-    const deal = createDioramaDeal(stageId, () => 0.5);
+    const playRule = this.preferredPlayRule();
+    const deal = playRule === 'tray' ? createDioramaTrayDeal(stageId, () => 0.5) : createDioramaDeal(stageId, () => 0.5);
+    this.dealPlayRule = playRule; this.currentDioramaStageId = stageId;
     this.replaceTiles(deal.tiles);
   }
 
   newDeal(difficulty: Difficulty = this.difficulty): void {
     this.discardHintPlan();
     const random = () => ((this.seedState = (this.seedState * 1664525 + 1013904223) >>> 0) / 2 ** 32);
-    const { layout, faceDown } = createSolvableDeal(difficulty, random);
+    const playRule = this.preferredPlayRule();
+    const { layout, faceDown } = playRule === 'tray' ? createTrayChallengeDeal(difficulty, random) : createSolvableDeal(difficulty, random);
     const expectedCount = DIFFICULTY_TILE_COUNTS[difficulty];
     if (layout.length !== expectedCount) throw new Error(`${difficulty} layout contains ${layout.length}/${expectedCount} tiles`);
     const nextTiles = layout.map(({ face, ...position }, index) => new Tile(index, face, position, this.geometry, faceDown[index]));
@@ -72,7 +79,7 @@ export class BoardManager {
       this.scene.remove(tile.mesh);
       (tile.mesh.material as THREE.Material[]).forEach((material) => material.dispose());
     });
-    this.difficulty = difficulty;
+    this.difficulty = difficulty; this.dealPlayRule = playRule; this.currentDioramaStageId = undefined;
     this.tiles = nextTiles;
     this.initialDeal = nextTiles.map((tile) => ({ type: tile.type, faceDown: tile.faceDown }));
     this.tiles.forEach((tile) => this.scene.add(tile.mesh));
@@ -193,6 +200,12 @@ export class BoardManager {
   }
 
   restart(): void {
+    const playRule = this.preferredPlayRule();
+    if (playRule !== this.dealPlayRule) {
+      if (this.currentDioramaStageId) this.newDioramaDeal(this.currentDioramaStageId);
+      else this.newDeal(this.difficulty);
+      return;
+    }
     this.discardHintPlan();
     this.tiles.forEach((tile, index) => {
       tile.removed = false; tile.resetRemovalVisual(); tile.mesh.visible = true;
@@ -251,6 +264,11 @@ export class BoardManager {
     if (invalid.length || this.tileMeshCount !== expectedCount) {
       throw new Error(`${this.difficulty} has ${invalid.length} non-renderable tiles`);
     }
+  }
+
+  private preferredPlayRule(): PlayRule {
+    try { return localStorage.getItem('mahjong-solitaire.play-rule.v1') === 'tray' ? 'tray' : 'pair'; }
+    catch { return 'pair'; }
   }
 
   private hashSeed(value: string): number {

@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { analyzeTrayBoard, boardStateHash, getAvailableActions, isFreeTile } from '../.test-dist/GameRules.js';
-import { DIORAMA_STAGE_ORDER, DIORAMA_STAGES, createDioramaDeal, replayDioramaCertificate } from '../.test-dist/DioramaStages.js';
+import { DIFFICULTIES, createTrayChallengeDeal } from '../.test-dist/BoardLayout.js';
+import { DIORAMA_STAGE_ORDER, DIORAMA_STAGES, createDioramaDeal, createDioramaTrayDeal, replayDioramaCertificate, replayDioramaTrayCertificate } from '../.test-dist/DioramaStages.js';
 
 const seeded = (seed) => {
   let state = seed >>> 0;
@@ -31,6 +32,7 @@ test('catalog has ten stable stages with a strictly increasing difficulty curve'
     const stage = DIORAMA_STAGES[id], { positions } = stage;
     assert.ok(positions.length > 0 && positions.length <= 68 && positions.length % 2 === 0, `${id} has a valid even count`);
     assert.ok(stage.hiddenRatio >= 0 && stage.hiddenRatio <= 0.25);
+    assert.equal(stage.trayChallenge, index >= 2, `${id} tray challenge threshold`);
     if (index) {
       const previous = DIORAMA_STAGES[DIORAMA_STAGE_ORDER[index - 1]];
       assert.ok(positions.length > previous.positions.length, `${id} adds tiles`);
@@ -75,6 +77,34 @@ test('seeded deals reproduce, vary, expose an action, and replay through CLEAR',
     assert.ok(hashes.size >= 20, `${id} meaningfully varies across seeds`);
     const geometry = DIORAMA_STAGES[id].positions.map((position, tileId) => ({ id: tileId, type: '', ...position, removed: false }));
     assert.ok(geometry.filter((tile) => isFreeTile(tile, geometry)).length >= 2);
+  }
+});
+
+test('tray mode starts requiring temporary storage at higher difficulty', () => {
+  assert.equal(DIFFICULTIES.easy.trayChallenge, false);
+  for (const difficulty of ['normal', 'hard']) {
+    const config = DIFFICULTIES[difficulty];
+    assert.equal(config.trayChallenge, true);
+    const deal = createTrayChallengeDeal(difficulty, seeded(difficulty === 'normal' ? 401 : 701));
+    const openingIds = deal.solution.flat().slice(0, config.trayCapacity);
+    const openingFaces = openingIds.map((id) => deal.layout[id].face);
+    assert.equal(new Set(openingFaces).size, config.trayCapacity, `${difficulty} opens with ${config.trayCapacity} unmatched tray tiles`);
+    assert.notEqual(deal.layout[deal.solution[0][0]].face, deal.layout[deal.solution[0][1]].face, `${difficulty} first free pair positions do not match`);
+  }
+
+  for (const id of DIORAMA_STAGE_ORDER) {
+    const stage = DIORAMA_STAGES[id];
+    const deal = createDioramaTrayDeal(id, seeded(1000 + DIORAMA_STAGE_ORDER.indexOf(id)));
+    if (!stage.trayChallenge) {
+      assert.equal(replayDioramaCertificate(deal.tiles, deal.solution), true, `${id} remains an introductory pair-style tray deal`);
+      continue;
+    }
+    const openingIds = deal.removalPairs.flat().slice(0, stage.trayCapacity);
+    const openingFaces = openingIds.map((tileId) => deal.tiles[tileId].type);
+    assert.equal(new Set(openingFaces).size, stage.trayCapacity, `${id} fills the tray with distinct temporary tiles before matches arrive`);
+    assert.notEqual(deal.tiles[deal.removalPairs[0][0]].type, deal.tiles[deal.removalPairs[0][1]].type, `${id} does not expose the canonical pair as an immediate match`);
+    assert.ok(deal.solution.some((action) => action.kind === 'tray'), `${id} has a tray certificate`);
+    assert.equal(replayDioramaTrayCertificate(deal.tiles, deal.solution, stage.trayCapacity), true, `${id} tray certificate clears safely`);
   }
 });
 
