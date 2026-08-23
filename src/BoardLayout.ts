@@ -1,4 +1,4 @@
-import { findSolvableRemovalOrder, generateSolvableTypes, RandomSource, TilePosition } from './GameRules.js';
+import { analyzeBoard, findSolvableRemovalOrder, generateSolvableTypes, RandomSource, TilePosition, type TileState } from './GameRules.js';
 import { MAHJONG_FACES } from './TileCatalog.js';
 
 export type Difficulty = 'easy' | 'normal' | 'hard';
@@ -9,6 +9,7 @@ export interface DifficultyConfig {
   hints: number | null;
   shuffles: number | null;
   trayCapacity: number;
+  trayChallenge: boolean;
 }
 
 const rectangle = (columns: number, rows: number, z: number): TilePosition[] =>
@@ -61,9 +62,9 @@ export const HARD_FALLBACK_LAYOUT: readonly TileLayout[] = (() => {
 })();
 
 export const DIFFICULTIES: Record<Difficulty, DifficultyConfig> = {
-  easy: { label: 'EASY', positions: EASY_POSITIONS, hints: null, shuffles: null, trayCapacity: 5 },
-  normal: { label: 'NORMAL', positions: NORMAL_POSITIONS, hints: 3, shuffles: 2, trayCapacity: 4 },
-  hard: { label: 'HARD', positions: HARD_POSITIONS, hints: 1, shuffles: 0, trayCapacity: 3 },
+  easy: { label: 'EASY', positions: EASY_POSITIONS, hints: null, shuffles: null, trayCapacity: 5, trayChallenge: false },
+  normal: { label: 'NORMAL', positions: NORMAL_POSITIONS, hints: 3, shuffles: 2, trayCapacity: 4, trayChallenge: true },
+  hard: { label: 'HARD', positions: HARD_POSITIONS, hints: 1, shuffles: 0, trayCapacity: 3, trayChallenge: true },
 };
 
 function hasUniqueValidPositions(positions: readonly TilePosition[]): boolean {
@@ -78,6 +79,56 @@ function hasUniqueValidPositions(positions: readonly TilePosition[]): boolean {
 
 function pairFaces(pairCount: number): string[] {
   return Array.from({ length: pairCount }, (_, index) => TILE_FACES[index % TILE_FACES.length]);
+}
+
+/**
+ * Assigns faces across several consecutive legal removal pairs instead of
+ * putting the same face on each pair. Following the recorded removal order
+ * therefore fills the tray before later tiles release those stored faces.
+ *
+ * Capacity 4 blocks: AB / CD / AC / BD
+ * Capacity 3 blocks: AB / CA / BC
+ */
+export function createTrayChallengeTypes(
+  removalPairs: readonly (readonly [number, number])[],
+  capacity: number,
+  random: RandomSource = Math.random,
+): string[] {
+  if (capacity < 2) throw new Error('Tray challenge requires at least two slots');
+  const values = shuffledFaces(removalPairs.length, random);
+  const result = Array<string>(removalPairs.length * 2);
+
+  const assign = (pairIndex: number, firstFace: string, secondFace: string): void => {
+    const [firstId, secondId] = removalPairs[pairIndex];
+    result[firstId] = firstFace; result[secondId] = secondFace;
+  };
+
+  let index = 0;
+  while (index < removalPairs.length) {
+    const remaining = removalPairs.length - index;
+    if (capacity >= 4 && remaining >= 4) {
+      const [a, b, c, d] = values.slice(index, index + 4);
+      assign(index, a, b); assign(index + 1, c, d);
+      assign(index + 2, a, c); assign(index + 3, b, d);
+      index += 4; continue;
+    }
+    if (remaining >= 3) {
+      const [a, b, c] = values.slice(index, index + 3);
+      assign(index, a, b); assign(index + 1, c, a); assign(index + 2, b, c);
+      index += 3; continue;
+    }
+    if (remaining === 2) {
+      const [a, b] = values.slice(index, index + 2);
+      assign(index, a, b); assign(index + 1, a, b);
+      index += 2; continue;
+    }
+    const [firstId, secondId] = removalPairs[index];
+    result[firstId] = result[secondId] = values[index];
+    index++;
+  }
+
+  if (result.some((face) => !face)) throw new Error('Tray challenge did not assign every tile');
+  return result;
 }
 
 export function createSolvableLayout(difficulty: Difficulty = 'normal', random: RandomSource = Math.random): TileLayout[] {
@@ -117,6 +168,7 @@ export function createSolvableLayout(difficulty: Difficulty = 'normal', random: 
 }
 
 export interface SolvableDeal { layout: TileLayout[]; faceDown: boolean[]; solution: Array<readonly [number, number]>; }
+export interface TrayChallengeDeal { layout: TileLayout[]; faceDown: boolean[]; solution: Array<readonly [number, number]>; }
 
 /** Builds hidden flags from the deal's solution certificate (never both ends
  * of a removal pair), preserving a complete route under the one-reveal rule. */
@@ -128,6 +180,53 @@ export function createSolvableDeal(difficulty: Difficulty = 'normal', random: Ra
     const [first, second] = order[index]; faces[first] = faces[second] = face;
   });
   const target = Math.round(positions.length * (difficulty === 'easy' ? 0 : difficulty === 'normal' ? 0.125 : 0.225));
+  const candidates = order.map((pair) => pair[random() < 0.5 ? 0 : 1]);
+  for (let index = candidates.length - 1; index > 0; index--) {
+    const swap = Math.floor(random() * (index + 1)); [candidates[index], candidates[swap]] = [candidates[swap], candidates[index]];
+  }
+  const hidden = new Set(candidates.slice(0, target));
+  return {
+    layout: positions.map((position, index) => ({ ...position, face: faces[index] })),
+    faceDown: positions.map((_, index) => hidden.has(index)),
+    solution: order.map((pair) => [...pair] as const),
+  };
+}
+
+function pairOnlyStatus(positions: readonly TilePosition[], faces: readonly string[]): 'UNSOLVABLE' | 'OTHER' {
+  const tiles: TileState[] = positions.map((position, id) => ({
+    id, type: faces[id], ...position, removed: false, faceDown: false, originallyFaceDown: false,
+  }));
+  return analyzeBoard(tiles, 100_000).status === 'UNSOLVABLE' ? 'UNSOLVABLE' : 'OTHER';
+}
+
+/** A tray-only deal: higher difficulties deliberately separate matching faces
+ * and reject any layout that still has a complete pair-only solution. */
+export function createTrayChallengeDeal(difficulty: Difficulty = 'normal', random: RandomSource = Math.random): TrayChallengeDeal {
+  const config = DIFFICULTIES[difficulty];
+  if (!config.trayChallenge) return createSolvableDeal(difficulty, random);
+  const positions = config.positions;
+  let order: Array<readonly [number, number]> | undefined;
+  let faces: string[] | undefined;
+
+  if (difficulty === 'hard') {
+    order = HARD_REMOVAL_ORDER;
+    faces = createTrayChallengeTypes(order, config.trayCapacity, random);
+  } else {
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const candidateOrder = findSolvableRemovalOrder(positions, random);
+      const candidateFaces = createTrayChallengeTypes(candidateOrder, config.trayCapacity, random);
+      if (pairOnlyStatus(positions, candidateFaces) === 'UNSOLVABLE') {
+        order = candidateOrder; faces = candidateFaces; break;
+      }
+    }
+    if (!order || !faces) {
+      order = findSolvableRemovalOrder(positions, () => 0.5);
+      faces = createTrayChallengeTypes(order, config.trayCapacity, () => 0.5);
+    }
+  }
+  if (pairOnlyStatus(positions, faces) !== 'UNSOLVABLE') throw new Error(`${difficulty} tray deal still has a pair-only solution`);
+
+  const target = Math.round(positions.length * (difficulty === 'normal' ? 0.125 : 0.225));
   const candidates = order.map((pair) => pair[random() < 0.5 ? 0 : 1]);
   for (let index = candidates.length - 1; index > 0; index--) {
     const swap = Math.floor(random() * (index + 1)); [candidates[index], candidates[swap]] = [candidates[swap], candidates[index]];

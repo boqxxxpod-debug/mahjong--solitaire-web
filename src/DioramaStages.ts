@@ -1,14 +1,18 @@
 import {
+  analyzeBoard,
   applySolverAction,
   boardStateHash,
   findSolvableRemovalOrder,
   isClear,
+  isFreeTile,
+  isTrayClear,
+  moveTileToTray,
   type RandomSource,
   type SolverAction,
   type TilePosition,
   type TileState,
 } from './GameRules.js';
-import { TILE_FACES } from './BoardLayout.js';
+import { createTrayChallengeTypes, TILE_FACES } from './BoardLayout.js';
 
 export type DioramaStageId =
   | 'gate'
@@ -31,6 +35,7 @@ export interface DioramaStage {
   shuffles: number | null;
   hiddenRatio: number;
   trayCapacity: number;
+  trayChallenge: boolean;
   camera: { targetZ: number; distanceScale: number };
 }
 
@@ -70,16 +75,16 @@ export const DIORAMA_STAGE_ORDER = [
 ] as const;
 
 export const DIORAMA_STAGES: Readonly<Record<DioramaStageId, DioramaStage>> = {
-  gate: { id: 'gate', label: 'Gate', description: '24 tiles · two open layers.', positions: GATE, hints: null, shuffles: null, hiddenRatio: 0, trayCapacity: 5, camera: { targetZ: 0.8, distanceScale: 1 } },
-  tower: { id: 'tower', label: 'Tower', description: '28 tiles · climb four storeys.', positions: TOWER, hints: 5, shuffles: 4, hiddenRatio: 0.04, trayCapacity: 5, camera: { targetZ: 0.8, distanceScale: 1 } },
-  bridge: { id: 'bridge', label: 'Bridge', description: '32 tiles · clear the raised span.', positions: BRIDGE, hints: 4, shuffles: 3, hiddenRatio: 0.07, trayCapacity: 4, camera: { targetZ: 1, distanceScale: 1 } },
-  turtle: { id: 'turtle', label: 'Turtle', description: '36 tiles · unlock the shell.', positions: TURTLE, hints: 4, shuffles: 3, hiddenRatio: 0.10, trayCapacity: 4, camera: { targetZ: 1, distanceScale: 1 } },
-  pyramid: { id: 'pyramid', label: 'Pyramid', description: '40 tiles · work down the core.', positions: PYRAMID, hints: 3, shuffles: 2, hiddenRatio: 0.13, trayCapacity: 4, camera: { targetZ: 1.2, distanceScale: 1 } },
-  fortress: { id: 'fortress', label: 'Fortress', description: '44 tiles · breach five layers.', positions: FORTRESS, hints: 3, shuffles: 2, hiddenRatio: 0.16, trayCapacity: 3, camera: { targetZ: 1.2, distanceScale: 1 } },
-  pagoda: { id: 'pagoda', label: 'Pagoda', description: '50 tiles · dismantle the eaves.', positions: PAGODA, hints: 2, shuffles: 1, hiddenRatio: 0.18, trayCapacity: 3, camera: { targetZ: 1.4, distanceScale: 1 } },
-  spiral: { id: 'spiral', label: 'Spiral', description: '56 tiles · read the six layers.', positions: SPIRAL, hints: 2, shuffles: 1, hiddenRatio: 0.20, trayCapacity: 3, camera: { targetZ: 1.5, distanceScale: 1 } },
-  dragon: { id: 'dragon', label: 'Dragon', description: '62 tiles · open the raised body.', positions: DRAGON, hints: 1, shuffles: 0, hiddenRatio: 0.23, trayCapacity: 3, camera: { targetZ: 1.5, distanceScale: 1 } },
-  'great-wall': { id: 'great-wall', label: 'Great Wall', description: '68 tiles · no rescue remains.', positions: GREAT_WALL, hints: 0, shuffles: 0, hiddenRatio: 0.25, trayCapacity: 3, camera: { targetZ: 1.5, distanceScale: 1 } },
+  gate: { id: 'gate', label: 'Gate', description: '24 tiles · two open layers.', positions: GATE, hints: null, shuffles: null, hiddenRatio: 0, trayCapacity: 5, trayChallenge: false, camera: { targetZ: 0.8, distanceScale: 1 } },
+  tower: { id: 'tower', label: 'Tower', description: '28 tiles · climb four storeys.', positions: TOWER, hints: 5, shuffles: 4, hiddenRatio: 0.04, trayCapacity: 5, trayChallenge: false, camera: { targetZ: 0.8, distanceScale: 1 } },
+  bridge: { id: 'bridge', label: 'Bridge', description: '32 tiles · clear the raised span.', positions: BRIDGE, hints: 4, shuffles: 3, hiddenRatio: 0.07, trayCapacity: 4, trayChallenge: true, camera: { targetZ: 1, distanceScale: 1 } },
+  turtle: { id: 'turtle', label: 'Turtle', description: '36 tiles · unlock the shell.', positions: TURTLE, hints: 4, shuffles: 3, hiddenRatio: 0.10, trayCapacity: 4, trayChallenge: true, camera: { targetZ: 1, distanceScale: 1 } },
+  pyramid: { id: 'pyramid', label: 'Pyramid', description: '40 tiles · work down the core.', positions: PYRAMID, hints: 3, shuffles: 2, hiddenRatio: 0.13, trayCapacity: 4, trayChallenge: true, camera: { targetZ: 1.2, distanceScale: 1 } },
+  fortress: { id: 'fortress', label: 'Fortress', description: '44 tiles · breach five layers.', positions: FORTRESS, hints: 3, shuffles: 2, hiddenRatio: 0.16, trayCapacity: 3, trayChallenge: true, camera: { targetZ: 1.2, distanceScale: 1 } },
+  pagoda: { id: 'pagoda', label: 'Pagoda', description: '50 tiles · dismantle the eaves.', positions: PAGODA, hints: 2, shuffles: 1, hiddenRatio: 0.18, trayCapacity: 3, trayChallenge: true, camera: { targetZ: 1.4, distanceScale: 1 } },
+  spiral: { id: 'spiral', label: 'Spiral', description: '56 tiles · read the six layers.', positions: SPIRAL, hints: 2, shuffles: 1, hiddenRatio: 0.20, trayCapacity: 3, trayChallenge: true, camera: { targetZ: 1.5, distanceScale: 1 } },
+  dragon: { id: 'dragon', label: 'Dragon', description: '62 tiles · open the raised body.', positions: DRAGON, hints: 1, shuffles: 0, hiddenRatio: 0.23, trayCapacity: 3, trayChallenge: true, camera: { targetZ: 1.5, distanceScale: 1 } },
+  'great-wall': { id: 'great-wall', label: 'Great Wall', description: '68 tiles · no rescue remains.', positions: GREAT_WALL, hints: 0, shuffles: 0, hiddenRatio: 0.25, trayCapacity: 3, trayChallenge: true, camera: { targetZ: 1.5, distanceScale: 1 } },
 };
 
 const removalOrders = new Map<DioramaStageId, Array<readonly [number, number]>>();
@@ -103,6 +108,19 @@ function shuffle<T>(source: readonly T[], random: RandomSource): T[] {
   return result;
 }
 
+function hiddenForStage(stage: DioramaStage, order: readonly (readonly [number, number])[], random: RandomSource): Set<number> {
+  const hiddenTarget = Math.round(stage.positions.length * stage.hiddenRatio);
+  const hiddenCandidates = shuffle(order.map(([first, second]) => random() < 0.5 ? first : second), random);
+  return new Set(hiddenCandidates.slice(0, hiddenTarget));
+}
+
+function buildTiles(stage: DioramaStage, types: readonly string[], hidden: ReadonlySet<number>): TileState[] {
+  return stage.positions.map((position, id): TileState => ({
+    id, type: types[id], ...position, removed: false,
+    faceDown: hidden.has(id), originallyFaceDown: hidden.has(id),
+  }));
+}
+
 /** Creates a deal whose recorded actions are a complete, canonical-rule replay.
  * Hidden choices contain at most one end of a required pair, so a reveal can
  * always be immediately followed by that pair's removal. */
@@ -114,13 +132,8 @@ export function createDioramaDeal(stageId: DioramaStageId, random: RandomSource 
   const types = Array<string>(stage.positions.length);
   order.forEach(([first, second], index) => { types[first] = types[second] = pairFaces[index]; });
 
-  const hiddenTarget = Math.round(stage.positions.length * stage.hiddenRatio);
-  const hiddenCandidates = shuffle(order.map(([first, second]) => random() < 0.5 ? first : second), random);
-  const hidden = new Set(hiddenCandidates.slice(0, hiddenTarget));
-  const tiles = stage.positions.map((position, id): TileState => ({
-    id, type: types[id], ...position, removed: false,
-    faceDown: hidden.has(id), originallyFaceDown: hidden.has(id),
-  }));
+  const hidden = hiddenForStage(stage, order, random);
+  const tiles = buildTiles(stage, types, hidden);
   const solution: SolverAction[] = [];
   for (const [firstId, secondId] of order) {
     const hiddenId = hidden.has(firstId) ? firstId : hidden.has(secondId) ? secondId : null;
@@ -128,6 +141,29 @@ export function createDioramaDeal(stageId: DioramaStageId, random: RandomSource 
     solution.push({ kind: 'pair', firstId, secondId });
   }
   if (!replayDioramaCertificate(tiles, solution)) throw new Error(`${stageId} generated an invalid certificate`);
+  return { stageId, tiles, solution, removalPairs: order.map((pair) => [...pair] as const), stateHash: boardStateHash(tiles) };
+}
+
+/** Higher tray stages intentionally separate matching faces. The recorded
+ * actions fill the tray first, then clear it with later free tiles. */
+export function createDioramaTrayDeal(stageId: DioramaStageId, random: RandomSource = Math.random): DioramaDeal {
+  const stage = DIORAMA_STAGES[stageId];
+  if (!stage) throw new Error(`Unknown diorama stage: ${stageId}`);
+  if (!stage.trayChallenge) return createDioramaDeal(stageId, random);
+  const order = removalOrder(stage);
+  const types = createTrayChallengeTypes(order, stage.trayCapacity, random);
+  const pairOnlyTiles = buildTiles(stage, types, new Set<number>());
+  if (analyzeBoard(pairOnlyTiles, 100_000).status !== 'UNSOLVABLE') throw new Error(`${stageId} tray deal still has a pair-only solution`);
+  const hidden = hiddenForStage(stage, order, random);
+  const tiles = buildTiles(stage, types, hidden);
+  const solution: SolverAction[] = [];
+  for (const [firstId, secondId] of order) {
+    for (const tileId of [firstId, secondId]) {
+      if (hidden.has(tileId)) solution.push({ kind: 'reveal', tileId });
+      solution.push({ kind: 'tray', tileId });
+    }
+  }
+  if (!replayDioramaTrayCertificate(tiles, solution, stage.trayCapacity)) throw new Error(`${stageId} generated an invalid tray certificate`);
   return { stageId, tiles, solution, removalPairs: order.map((pair) => [...pair] as const), stateHash: boardStateHash(tiles) };
 }
 
@@ -139,4 +175,26 @@ export function replayDioramaCertificate(initial: readonly TileState[], solution
     state = next;
   }
   return isClear(state);
+}
+
+export function replayDioramaTrayCertificate(initial: readonly TileState[], solution: readonly SolverAction[], capacity: number): boolean {
+  const state = initial.map((tile) => ({ ...tile }));
+  let tray: TileState[] = [];
+  for (const action of solution) {
+    if (action.kind === 'reveal') {
+      const tile = state.find((candidate) => candidate.id === action.tileId);
+      if (!tile || !tile.faceDown || !isFreeTile(tile, state)) return false;
+      state.forEach((candidate) => {
+        if (!candidate.removed && candidate.originallyFaceDown) candidate.faceDown = candidate.id !== tile.id;
+      });
+      continue;
+    }
+    if (action.kind !== 'tray') return false;
+    const tile = state.find((candidate) => candidate.id === action.tileId);
+    if (!tile) return false;
+    const nextTray = moveTileToTray(tile, state, tray, capacity);
+    if (!nextTray) return false;
+    tray = nextTray;
+  }
+  return isTrayClear(state, tray);
 }
