@@ -1,17 +1,7 @@
-const TRAY_FACE_SYMBOLS: Record<string, { glyph: string; color: string }> = {
-  bamboo: { glyph: '竹', color: '#167b58' },
-  circle: { glyph: '筒', color: '#b64236' },
-  character: { glyph: '萬', color: '#263c55' },
-  dragon: { glyph: '中', color: '#c63534' },
-  east: { glyph: '東', color: '#263c55' }, south: { glyph: '南', color: '#263c55' },
-  west: { glyph: '西', color: '#263c55' }, north: { glyph: '北', color: '#263c55' },
-  plum: { glyph: '梅', color: '#b64270' }, orchid: { glyph: '蘭', color: '#7753a5' },
-  season: { glyph: '季', color: '#b67925' }, flower: { glyph: '花', color: '#b64270' },
-  green: { glyph: '發', color: '#167b58' }, white: { glyph: '白', color: '#4c7089' },
-  one: { glyph: '一', color: '#263c55' }, two: { glyph: '二', color: '#263c55' },
-  three: { glyph: '三', color: '#263c55' }, four: { glyph: '四', color: '#263c55' },
-  red: { glyph: '紅', color: '#c63534' },
-};
+import type { DioramaStageId } from './DioramaStages';
+import { TRAY_CAPACITY } from './GameRules';
+import { TileFace } from './TileFace';
+import { getTileFaceLabel } from './TileCatalog';
 
 export class UIManager {
   private readonly undoButton = document.querySelector<HTMLButtonElement>('#undo')!;
@@ -52,16 +42,20 @@ export class UIManager {
   onPlayRule(handler: (rule: 'pair' | 'tray') => void): void {
     document.querySelectorAll<HTMLButtonElement>('[data-rule]').forEach((button) => button.addEventListener('click', () => handler(button.dataset.rule as 'pair' | 'tray')));
   }
-  renderPlayRule(rule: 'pair' | 'tray', trayTypes: readonly string[] = []): void {
+  renderPlayRule(rule: 'pair' | 'tray', trayTypes: readonly string[] = [], capacity = TRAY_CAPACITY): void {
     document.querySelectorAll<HTMLButtonElement>('[data-rule]').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.rule === rule)));
     this.tray.hidden = rule !== 'tray';
-    this.traySlots.replaceChildren(...Array.from({ length: 5 }, (_, index) => {
+    this.tray.setAttribute('aria-label', `${capacity}枠トレイ`);
+    this.traySlots.replaceChildren(...Array.from({ length: TRAY_CAPACITY }, (_, index) => {
       const slot = document.createElement('span');
       const type = trayTypes[index];
       slot.className = 'tray-slot';
-      if (type) {
+      if (index >= capacity) {
+        slot.dataset.locked = '';
+        slot.setAttribute('aria-label', `使用不可：この難易度は${capacity}枠`);
+      } else if (type) {
         slot.dataset.type = type;
-        slot.setAttribute('aria-label', type.replace(/[-_]/g, ' '));
+        slot.setAttribute('aria-label', getTileFaceLabel(type));
         slot.setAttribute('data-filled', '');
         slot.append(this.createTrayFace(type));
       }
@@ -88,8 +82,8 @@ export class UIManager {
   }
   onModeMenu(handler: () => void): void { this.modeMenu.addEventListener('click', handler); document.querySelector('#close-mode')!.addEventListener('click', () => this.hideModeSheet()); }
   onClassic(handler: () => void): void { document.querySelector('#choose-classic')!.addEventListener('click', handler); }
-  onStage(handler: (stage: 'gate' | 'tower' | 'bridge' | 'dragon') => void): void {
-    this.stageList.addEventListener('click', (event) => { const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-stage]'); if (button && !button.disabled) handler(button.dataset.stage as 'gate' | 'tower' | 'bridge' | 'dragon'); });
+  onStage(handler: (stage: DioramaStageId) => void): void {
+    this.stageList.addEventListener('click', (event) => { const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-stage]'); if (button && !button.disabled) handler(button.dataset.stage as DioramaStageId); });
   }
   onReplay(handler: () => void): void { this.replayButton.addEventListener('click', handler); }
   onNewDeal(handler: () => void): void { this.newDealButton.addEventListener('click', handler); }
@@ -169,17 +163,9 @@ export class UIManager {
     return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
   }
   private createTrayFace(type: string): HTMLCanvasElement {
-    const canvas = document.createElement('canvas');
+    const canvas = TileFace.createCanvas(type);
     canvas.className = 'tray-tile-face';
-    canvas.width = canvas.height = 256;
     canvas.setAttribute('aria-hidden', 'true');
-    const context = canvas.getContext('2d');
-    if (!context) throw new Error('Canvas 2D is unavailable');
-    const symbol = TRAY_FACE_SYMBOLS[type] ?? { glyph: '?', color: '#263c55' };
-    context.fillStyle = '#fffdf0'; context.fillRect(0, 0, 256, 256);
-    context.strokeStyle = '#d6cba6'; context.lineWidth = 8; context.strokeRect(16, 16, 224, 224);
-    context.fillStyle = symbol.color; context.font = 'bold 126px serif';
-    context.textAlign = 'center'; context.textBaseline = 'middle'; context.fillText(symbol.glyph, 128, 129);
     return canvas;
   }
   private showResult(title: string, detail: string): void {

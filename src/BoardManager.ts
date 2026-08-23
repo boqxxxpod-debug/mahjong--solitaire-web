@@ -1,10 +1,38 @@
 import * as THREE from 'three';
-import { BoardGeometry } from './BoardGeometry';
+import {
+  BoardGeometry,
+  TILE_DEPTH,
+  TILE_HEIGHT,
+  TILE_LAYER_DEPTH_OFFSET,
+  TILE_LAYER_HEIGHT,
+  TILE_ROW_STRIDE,
+  TILE_WIDTH,
+} from './BoardGeometry';
 import { Tile } from './Tile';
 import { analyzeBoard, applySolverAction, boardStateHash, hasAvailableAction, isFreeTile, isTileUncovered } from './GameRules';
 import type { AvailableAction, SearchResult, SolverAction, TileState } from './GameRules';
-import { createSolvableDeal, Difficulty } from './BoardLayout';
-import { createDioramaDeal, type DioramaStageId } from './DioramaStages';
+import { createSolvableDeal, DIFFICULTIES, Difficulty } from './BoardLayout';
+import { createDioramaDeal, DIORAMA_STAGES, type DioramaStageId } from './DioramaStages';
+import type { TilePosition } from './GameRules';
+
+function layoutBounds(positions: readonly TilePosition[]): THREE.Box3 {
+  const bounds = new THREE.Box3();
+  positions.forEach(({ x, y, z }) => {
+    const center = new THREE.Vector3(
+      x * TILE_WIDTH * 0.5,
+      z * TILE_LAYER_HEIGHT,
+      y * TILE_ROW_STRIDE + z * TILE_LAYER_DEPTH_OFFSET,
+    );
+    bounds.expandByPoint(center.clone().add(new THREE.Vector3(-TILE_WIDTH / 2, -TILE_HEIGHT / 2, -TILE_DEPTH / 2)));
+    bounds.expandByPoint(center.clone().add(new THREE.Vector3(TILE_WIDTH / 2, TILE_HEIGHT / 2, TILE_DEPTH / 2)));
+  });
+  return bounds;
+}
+
+const CAMERA_REFERENCE_BOUNDS = layoutBounds([
+  ...Object.values(DIFFICULTIES).flatMap((config) => config.positions),
+  ...Object.values(DIORAMA_STAGES).flatMap((stage) => stage.positions),
+]);
 
 export class BoardManager {
   tiles: Tile[] = [];
@@ -178,6 +206,23 @@ export class BoardManager {
     const bounds = new THREE.Box3();
     this.tiles.forEach((tile) => bounds.expandByObject(tile.mesh));
     return bounds;
+  }
+
+  /** A shared six-column/six-layer frame keeps the same world-to-screen tile
+   * scale when players change levels. The frame follows a layout horizontally,
+   * but stays aligned to its lowest layer so short levels are never enlarged. */
+  getCameraBounds(): THREE.Box3 {
+    const actual = layoutBounds(this.tiles.map((tile) => tile.logical));
+    const actualSize = actual.getSize(new THREE.Vector3());
+    const referenceSize = CAMERA_REFERENCE_BOUNDS.getSize(new THREE.Vector3());
+    const size = new THREE.Vector3(
+      Math.max(actualSize.x, referenceSize.x),
+      Math.max(actualSize.y, referenceSize.y),
+      Math.max(actualSize.z, referenceSize.z),
+    );
+    const center = actual.getCenter(new THREE.Vector3());
+    center.y = actual.min.y + size.y / 2;
+    return new THREE.Box3().setFromCenterAndSize(center, size);
   }
 
   private refreshFreeTiles(): void {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { boardStateHash, getAvailableActions, isFreeTile } from '../.test-dist/GameRules.js';
+import { analyzeTrayBoard, boardStateHash, getAvailableActions, isFreeTile } from '../.test-dist/GameRules.js';
 import { DIORAMA_STAGE_ORDER, DIORAMA_STAGES, createDioramaDeal, replayDioramaCertificate } from '../.test-dist/DioramaStages.js';
 
 const seeded = (seed) => {
@@ -20,12 +20,26 @@ function normalizedTransforms(positions) {
   });
 }
 
-test('catalog has four stable, valid, supported and structurally distinct stages', () => {
-  assert.deepEqual(DIORAMA_STAGE_ORDER, ['gate', 'tower', 'bridge', 'dragon']);
+test('catalog has ten stable stages with a strictly increasing difficulty curve', () => {
+  assert.deepEqual(DIORAMA_STAGE_ORDER, [
+    'gate', 'tower', 'bridge', 'turtle', 'pyramid',
+    'fortress', 'pagoda', 'spiral', 'dragon', 'great-wall',
+  ]);
+  assert.deepEqual(DIORAMA_STAGE_ORDER.map((id) => DIORAMA_STAGES[id].positions.length), [24, 28, 32, 36, 40, 44, 50, 56, 62, 68]);
   const normalized = new Map();
-  for (const id of DIORAMA_STAGE_ORDER) {
-    const { positions } = DIORAMA_STAGES[id];
-    assert.ok(positions.length > 0 && positions.length <= 60 && positions.length % 2 === 0, `${id} has a valid even count`);
+  for (const [index, id] of DIORAMA_STAGE_ORDER.entries()) {
+    const stage = DIORAMA_STAGES[id], { positions } = stage;
+    assert.ok(positions.length > 0 && positions.length <= 68 && positions.length % 2 === 0, `${id} has a valid even count`);
+    assert.ok(stage.hiddenRatio >= 0 && stage.hiddenRatio <= 0.25);
+    if (index) {
+      const previous = DIORAMA_STAGES[DIORAMA_STAGE_ORDER[index - 1]];
+      assert.ok(positions.length > previous.positions.length, `${id} adds tiles`);
+      assert.ok(stage.hiddenRatio >= previous.hiddenRatio, `${id} never reduces hidden pressure`);
+      assert.ok((stage.hints ?? Infinity) <= (previous.hints ?? Infinity), `${id} never adds hints`);
+      assert.ok((stage.shuffles ?? Infinity) <= (previous.shuffles ?? Infinity), `${id} never adds shuffles`);
+      assert.ok(stage.trayCapacity <= previous.trayCapacity, `${id} never adds tray capacity`);
+    }
+    assert.ok(stage.trayCapacity >= 3 && stage.trayCapacity <= 5);
     assert.equal(new Set(positions.map(({ x, y, z }) => `${x},${y},${z}`)).size, positions.length);
     assert.ok(positions.every(({ x, y, z }) => [x, y, z].every(Number.isFinite)));
     for (const tile of positions.filter(({ z }) => z > 0)) {
@@ -49,7 +63,9 @@ test('seeded deals reproduce, vary, expose an action, and replay through CLEAR',
       assert.equal(deal.stateHash, boardStateHash(deal.tiles));
       assert.ok(getAvailableActions(deal.tiles).length > 0);
       assert.equal(replayDioramaCertificate(deal.tiles, deal.solution), true);
+      if (seed === 1) assert.equal(analyzeTrayBoard(deal.tiles, [], 1_000_000, DIORAMA_STAGES[id].trayCapacity).status, 'SOLVABLE');
       const hidden = deal.tiles.filter((tile) => tile.originallyFaceDown);
+      assert.equal(hidden.length, Math.round(DIORAMA_STAGES[id].positions.length * DIORAMA_STAGES[id].hiddenRatio));
       assert.ok(deal.removalPairs.every(([a, b]) => !(deal.tiles[a].originallyFaceDown && deal.tiles[b].originallyFaceDown)));
       assert.ok(hidden.every((tile) => tile.faceDown));
       const counts = new Map(); deal.tiles.forEach(({ type }) => counts.set(type, (counts.get(type) ?? 0) + 1));
