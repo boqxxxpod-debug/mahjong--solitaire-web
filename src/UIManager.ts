@@ -1,3 +1,18 @@
+const TRAY_FACE_SYMBOLS: Record<string, { glyph: string; color: string }> = {
+  bamboo: { glyph: '竹', color: '#167b58' },
+  circle: { glyph: '筒', color: '#b64236' },
+  character: { glyph: '萬', color: '#263c55' },
+  dragon: { glyph: '中', color: '#c63534' },
+  east: { glyph: '東', color: '#263c55' }, south: { glyph: '南', color: '#263c55' },
+  west: { glyph: '西', color: '#263c55' }, north: { glyph: '北', color: '#263c55' },
+  plum: { glyph: '梅', color: '#b64270' }, orchid: { glyph: '蘭', color: '#7753a5' },
+  season: { glyph: '季', color: '#b67925' }, flower: { glyph: '花', color: '#b64270' },
+  green: { glyph: '發', color: '#167b58' }, white: { glyph: '白', color: '#4c7089' },
+  one: { glyph: '一', color: '#263c55' }, two: { glyph: '二', color: '#263c55' },
+  three: { glyph: '三', color: '#263c55' }, four: { glyph: '四', color: '#263c55' },
+  red: { glyph: '紅', color: '#c63534' },
+};
+
 export class UIManager {
   private readonly undoButton = document.querySelector<HTMLButtonElement>('#undo')!;
   private readonly tray = document.querySelector<HTMLElement>('#tray')!;
@@ -40,18 +55,28 @@ export class UIManager {
   renderPlayRule(rule: 'pair' | 'tray', trayTypes: readonly string[] = []): void {
     document.querySelectorAll<HTMLButtonElement>('[data-rule]').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.rule === rule)));
     this.tray.hidden = rule !== 'tray';
-    this.traySlots.replaceChildren(...Array.from({ length: 5 }, (_, index) => { const slot = document.createElement('span');
-      slot.className = 'tray-slot'; slot.textContent = trayTypes[index] ? trayTypes[index].replace(/[-_]/g, ' ') : ''; slot.toggleAttribute('data-filled', Boolean(trayTypes[index])); return slot; }));
+    this.traySlots.replaceChildren(...Array.from({ length: 5 }, (_, index) => {
+      const slot = document.createElement('span');
+      const type = trayTypes[index];
+      slot.className = 'tray-slot';
+      if (type) {
+        slot.dataset.type = type;
+        slot.setAttribute('aria-label', type.replace(/[-_]/g, ' '));
+        slot.setAttribute('data-filled', '');
+        slot.append(this.createTrayFace(type));
+      }
+      return slot;
+    }));
   }
   showTrayMatch(type: string): void {
-    const label = type.replace(/[-_]/g, ' ');
     const source = [...this.traySlots.querySelectorAll<HTMLElement>('.tray-slot[data-filled]')]
-      .find((slot) => slot.textContent === label);
-    const left = source?.offsetLeft ?? this.traySlots.clientWidth / 2;
+      .find((slot) => slot.dataset.type === type);
+    const left = source ? source.offsetLeft + source.offsetWidth / 2 : this.traySlots.clientWidth / 2;
     const top = source?.offsetTop ?? 0;
     for (const offset of [-5, 5]) {
       const tile = document.createElement('span');
-      tile.className = 'tray-match-tile'; tile.textContent = label; tile.setAttribute('aria-hidden', 'true');
+      tile.className = 'tray-match-tile'; tile.setAttribute('aria-hidden', 'true');
+      tile.append(this.createTrayFace(type));
       tile.style.left = `${left + offset}px`; tile.style.top = `${top}px`;
       this.traySlots.append(tile); tile.addEventListener('animationend', () => tile.remove(), { once: true });
       window.setTimeout(() => tile.remove(), 320);
@@ -142,6 +167,20 @@ export class UIManager {
   private formatTime(milliseconds: number): string {
     const seconds = Math.floor(milliseconds / 1000);
     return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+  }
+  private createTrayFace(type: string): HTMLCanvasElement {
+    const canvas = document.createElement('canvas');
+    canvas.className = 'tray-tile-face';
+    canvas.width = canvas.height = 256;
+    canvas.setAttribute('aria-hidden', 'true');
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Canvas 2D is unavailable');
+    const symbol = TRAY_FACE_SYMBOLS[type] ?? { glyph: '?', color: '#263c55' };
+    context.fillStyle = '#fffdf0'; context.fillRect(0, 0, 256, 256);
+    context.strokeStyle = '#d6cba6'; context.lineWidth = 8; context.strokeRect(16, 16, 224, 224);
+    context.fillStyle = symbol.color; context.font = 'bold 126px serif';
+    context.textAlign = 'center'; context.textBaseline = 'middle'; context.fillText(symbol.glyph, 128, 129);
+    return canvas;
   }
   private showResult(title: string, detail: string): void {
     this.resultTitle.textContent = title; this.resultDetail.textContent = detail;
