@@ -150,8 +150,21 @@ function drawUnknown(context: CanvasRenderingContext2D): void {
   context.font = `900 120px ${SERIF}`; context.fillText('?', 125, 160);
 }
 
+function cloneCanvas(source: HTMLCanvasElement): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = source.width; canvas.height = source.height;
+  const context = canvas.getContext('2d'); if (!context) throw new Error('Canvas 2D is unavailable');
+  context.drawImage(source, 0, 0);
+  return canvas;
+}
+
 export class TileFace {
-  static createCanvas(type: string): HTMLCanvasElement {
+  // The first rendering of each face is the canonical artwork for the current
+  // page. Board textures and tray previews are cloned from the same pixels so
+  // a late web-font load can never make the tray show a different-looking tile.
+  private static readonly canonicalCanvases = new Map<string, HTMLCanvasElement>();
+
+  private static drawCanvas(type: string): HTMLCanvasElement {
     const canvas = document.createElement('canvas'); canvas.width = TILE_FACE_WIDTH; canvas.height = TILE_FACE_HEIGHT;
     const context = canvas.getContext('2d'); if (!context) throw new Error('Canvas 2D is unavailable');
     drawSurface(context);
@@ -162,6 +175,15 @@ export class TileFace {
     else if (type.startsWith('wind-') || type.startsWith('dragon-')) drawHonor(context, type);
     else drawUnknown(context);
     return canvas;
+  }
+
+  static createCanvas(type: string): HTMLCanvasElement {
+    let canonical = this.canonicalCanvases.get(type);
+    if (!canonical) {
+      canonical = this.drawCanvas(type);
+      this.canonicalCanvases.set(type, canonical);
+    }
+    return cloneCanvas(canonical);
   }
 
   static createTexture(type: string): THREE.CanvasTexture {
