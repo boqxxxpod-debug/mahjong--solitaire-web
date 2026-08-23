@@ -104,29 +104,39 @@ export function trayStateHash(tiles: readonly TileState[], tray: readonly TileSt
 }
 
 /** Applies one atomic tray tap. A full tray still accepts a matching rescue tile. */
-export function moveTileToTray(tile: TileState, tiles: readonly TileState[], tray: readonly TileState[]): TileState[] | null {
+export function moveTileToTray(
+  tile: TileState,
+  tiles: readonly TileState[],
+  tray: readonly TileState[],
+  capacity = TRAY_CAPACITY,
+): TileState[] | null {
   if (tile.removed || tile.faceDown || !isFreeTile(tile, tiles)) return null;
   const match = tray.find((candidate) => candidate.type === tile.type);
-  if (!match && tray.length >= TRAY_CAPACITY) return null;
+  if (!match && tray.length >= capacity) return null;
   tile.removed = true;
   return match ? tray.filter((candidate) => candidate.id !== match.id) : [...tray, { ...tile, removed: true }];
 }
 
-export function getTrayMoves<T extends TileState>(tiles: readonly T[], tray: readonly TileState[]): T[] {
+export function getTrayMoves<T extends TileState>(tiles: readonly T[], tray: readonly TileState[], capacity = TRAY_CAPACITY): T[] {
   return tiles.filter((tile) => !tile.faceDown && isFreeTile(tile, tiles) &&
-    (tray.length < TRAY_CAPACITY || tray.some((held) => held.type === tile.type)));
+    (tray.length < capacity || tray.some((held) => held.type === tile.type)));
 }
 
 export function isTrayClear(tiles: readonly TileState[], tray: readonly TileState[]): boolean {
   return isClear(tiles) && tray.length === 0;
 }
 
-export function isTrayGameOver(tiles: readonly TileState[], tray: readonly TileState[]): boolean {
-  return !isTrayClear(tiles, tray) && tray.length >= TRAY_CAPACITY && getTrayMoves(tiles, tray).length === 0;
+export function isTrayGameOver(tiles: readonly TileState[], tray: readonly TileState[], capacity = TRAY_CAPACITY): boolean {
+  return !isTrayClear(tiles, tray) && tray.length >= capacity && getTrayMoves(tiles, tray, capacity).length === 0;
 }
 
 /** Solver state includes the normalized tray multiset, so equivalent tray order is explored once. */
-export function analyzeTrayBoard(initial: readonly TileState[], initialTray: readonly TileState[] = [], nodeLimit = 1_000_000): SearchResult {
+export function analyzeTrayBoard(
+  initial: readonly TileState[],
+  initialTray: readonly TileState[] = [],
+  nodeLimit = 1_000_000,
+  capacity = TRAY_CAPACITY,
+): SearchResult {
   const start = initial.map((tile) => ({ ...tile }));
   const visited = new Set<string>(); const path: SolverAction[] = [];
   let solution: SolverAction[] = [], limitReached = false, maxDepth = 0, bestRemaining = start.filter((tile) => !tile.removed).length;
@@ -136,10 +146,10 @@ export function analyzeTrayBoard(initial: readonly TileState[], initialTray: rea
     visited.add(key); maxDepth = Math.max(maxDepth, depth); bestRemaining = Math.min(bestRemaining, tiles.filter((tile) => !tile.removed).length);
     if (isTrayClear(tiles, tray)) { solution = [...path]; return true; }
     // Matching the tray first minimizes capacity and makes HINT prefer safe rescue moves.
-    const moves = getTrayMoves(tiles, tray).sort((a, b) => Number(tray.some((held) => held.type === b.type)) - Number(tray.some((held) => held.type === a.type)));
+    const moves = getTrayMoves(tiles, tray, capacity).sort((a, b) => Number(tray.some((held) => held.type === b.type)) - Number(tray.some((held) => held.type === a.type)));
     for (const candidate of moves) {
       const next = tiles.map((tile) => ({ ...tile })); const tile = next.find((item) => item.id === candidate.id)!;
-      const nextTray = moveTileToTray(tile, next, tray)!; path.push({ kind: 'tray', tileId: tile.id });
+      const nextTray = moveTileToTray(tile, next, tray, capacity)!; path.push({ kind: 'tray', tileId: tile.id });
       if (visit(next, nextTray, depth + 1)) return true; path.pop();
     }
     for (const candidate of tiles) if (candidate.faceDown && isFreeTile(candidate, tiles)) {
@@ -354,6 +364,7 @@ export function shuffleActiveTypes(tiles: TileState[], random: RandomSource = Ma
 
 export function createCertifiedShuffle(
   source: readonly TileState[], seed: number, maxAttempts = 24, nodeLimit = 1_000_000, playRule: PlayRule = 'pair', tray: readonly TileState[] = [],
+  trayCapacity = TRAY_CAPACITY,
 ): CertifiedShuffleResult {
   let state = seed >>> 0;
   const random = () => ((state = (Math.imul(state, 1664525) + 1013904223) >>> 0) / 2 ** 32);
@@ -365,7 +376,7 @@ export function createCertifiedShuffle(
       const active = candidate.filter((tile) => !tile.removed); const types = shuffled(active.map((tile) => tile.type), random);
       active.forEach((tile, index) => { tile.type = types[index]; });
     }
-    const result = playRule === 'tray' ? analyzeTrayBoard(candidate, tray, nodeLimit) : analyzeBoard(candidate, nodeLimit);
+    const result = playRule === 'tray' ? analyzeTrayBoard(candidate, tray, nodeLimit, trayCapacity) : analyzeBoard(candidate, nodeLimit);
     if (result.status === 'SOLVABLE') return { status: 'SOLVABLE', tiles: candidate, attempts, rejectedUnsolvable, rejectedUnknown };
     if (result.status === 'UNKNOWN') rejectedUnknown++; else rejectedUnsolvable++;
   }

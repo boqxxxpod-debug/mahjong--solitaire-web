@@ -54,7 +54,7 @@ export class Game {
   }
 
   private fitCamera(viewportHeight: number): void {
-    const bounds = this.board.getBounds();
+    const bounds = this.board.getCameraBounds();
     const center = bounds.getCenter(new THREE.Vector3());
     const direction = new THREE.Vector3(0, 0.72, 0.69).normalize();
     this.camera.position.copy(center).add(direction);

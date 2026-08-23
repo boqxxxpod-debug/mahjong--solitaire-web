@@ -45,6 +45,7 @@ button:disabled { opacity: .4; cursor: not-allowed; transform: none; }
 .tray[hidden] { display: none; }.tray > b { display: block; margin-bottom: 4px; color: #58d9b5; font-size: 8px; letter-spacing: .18em; text-align: center; }
 #tray-slots { position: relative; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; }
 .tray-slot { min-width: 0; aspect-ratio: 2.5 / 3.2; display: block; overflow: hidden; border: 1px dashed #ffffff38; border-radius: 8px; background: #ffffff0a; }
+.tray-slot[data-locked] { border-style: solid; border-color: #071a2470; background: repeating-linear-gradient(135deg, #071a2470 0 6px, #0f333a70 6px 12px); box-shadow: inset 0 0 0 1px #ffffff0c; }
 .tray-slot[data-filled] { border-style: solid; background: #f1e4c8; box-shadow: inset 0 -5px #c5ae80, 0 2px 5px #0005; }
 .tray-tile-face { display: block; width: 100%; height: 100%; border-radius: 7px; }
 .tray-match-tile { position: absolute; z-index: 2; width: calc((100% - 20px) / 5); aspect-ratio: 2.5 / 3.2; display: block; overflow: hidden; border: 1px solid #bfffe6; border-radius: 8px; background: #f1e4c8; box-shadow: 0 0 12px #73f2c8aa, inset 0 -5px #c5ae80; pointer-events: none; animation: tray-match-pop 280ms ease-out forwards; }

@@ -1,4 +1,5 @@
 import { findSolvableRemovalOrder, generateSolvableTypes, RandomSource, TilePosition } from './GameRules.js';
+import { MAHJONG_FACES } from './TileCatalog.js';
 
 export type Difficulty = 'easy' | 'normal' | 'hard';
 export interface TileLayout extends TilePosition { face: string; }
@@ -7,6 +8,7 @@ export interface DifficultyConfig {
   positions: readonly TilePosition[];
   hints: number | null;
   shuffles: number | null;
+  trayCapacity: number;
 }
 
 const rectangle = (columns: number, rows: number, z: number): TilePosition[] =>
@@ -42,7 +44,7 @@ export const HARD_POSITIONS: readonly TilePosition[] = [
   ...rectangle(3, 2, 4),
 ];
 
-export const TILE_FACES = ['east', 'south', 'west', 'north', 'plum', 'orchid', 'bamboo', 'circle', 'character', 'green', 'white', 'one', 'two', 'three', 'four', 'red', 'dragon', 'season'] as const;
+export const TILE_FACES = MAHJONG_FACES;
 
 /**
  * The guaranteed Hard deal. The recorded removal pairs are a complete legal
@@ -59,9 +61,9 @@ export const HARD_FALLBACK_LAYOUT: readonly TileLayout[] = (() => {
 })();
 
 export const DIFFICULTIES: Record<Difficulty, DifficultyConfig> = {
-  easy: { label: 'EASY', positions: EASY_POSITIONS, hints: null, shuffles: null },
-  normal: { label: 'NORMAL', positions: NORMAL_POSITIONS, hints: 3, shuffles: 2 },
-  hard: { label: 'HARD', positions: HARD_POSITIONS, hints: 1, shuffles: 0 },
+  easy: { label: 'EASY', positions: EASY_POSITIONS, hints: null, shuffles: null, trayCapacity: 5 },
+  normal: { label: 'NORMAL', positions: NORMAL_POSITIONS, hints: 3, shuffles: 2, trayCapacity: 4 },
+  hard: { label: 'HARD', positions: HARD_POSITIONS, hints: 1, shuffles: 0, trayCapacity: 3 },
 };
 
 function hasUniqueValidPositions(positions: readonly TilePosition[]): boolean {

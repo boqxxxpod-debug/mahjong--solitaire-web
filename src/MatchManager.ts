@@ -93,15 +93,16 @@ export class MatchManager {
 
   private selectToTray(tile: Tile): void {
     const states = this.board.states(); const matchedType = this.tray.some((held) => held.type === tile.type) ? tile.type : undefined;
-    const nextTray = moveTileToTray(states[tile.id], states, this.tray);
+    const capacity = this.currentTrayCapacity();
+    const nextTray = moveTileToTray(states[tile.id], states, this.tray, capacity);
     if (!nextTray) { tile.flash('blocked'); this.ui.showMessage('トレイが満杯です。一致する牌を選んでください', true); return; }
     this.processingTap = true; this.recordHistory(); this.board.remove(tile); this.tray = nextTray.map((held) => ({ ...held }));
     this.moves++; this.ui.updateMoves(this.moves); this.ui.updateRemaining(this.board.activeTiles.length); this.renderTray();
     if (matchedType) this.ui.showTrayMatch(matchedType); this.processingTap = false;
     if (isTrayClear(this.board.states(), this.tray)) { this.discardHint(true); this.invalidateSearch(); clearSavedGame();
       if (this.mode === 'tour' && this.stageId) this.completeStage(); else this.ui.showClear(this.moves); return; }
-    if (isTrayGameOver(this.board.states(), this.tray)) { this.stuck = true; this.persist(); this.ui.showStuck(this.shuffles !== 0, true); return; }
-    this.ui.showMessage(this.tray.length < 5 ? '牌をトレイへ移しました' : '満杯：一致するFREE TILEで救済できます'); this.persist(); this.checkProgress();
+    if (isTrayGameOver(this.board.states(), this.tray, capacity)) { this.stuck = true; this.persist(); this.ui.showStuck(this.shuffles !== 0, true); return; }
+    this.ui.showMessage(this.tray.length < capacity ? '牌をトレイへ移しました' : '満杯：一致するFREE TILEで救済できます'); this.persist(); this.checkProgress();
   }
 
   private changePlayRule(rule: PlayRule): void {
@@ -110,10 +111,10 @@ export class MatchManager {
     this.playRule = rule; try { localStorage.setItem('mahjong-solitaire.play-rule.v1', rule); } catch { /* optional */ }
     this.unlocked = new Set(['gate']); this.completed.clear(); this.loadProgression(); this.renderMode();
     this.ui.hideModeSheet(); this.restart(); window.dispatchEvent(new Event('resize'));
-    if (rule === 'tray') { try { if (!localStorage.getItem('mahjong-solitaire.tray-intro.v1')) { this.ui.showMessage('FREE TILEを5枠へ。同じ牌2枚で自動消去します'); localStorage.setItem('mahjong-solitaire.tray-intro.v1', '1'); } } catch { /* optional */ } }
+    if (rule === 'tray') { try { if (!localStorage.getItem('mahjong-solitaire.tray-intro.v1')) { this.ui.showMessage('FREE TILEを難易度別3〜5枠へ。同じ牌2枚で自動消去します'); localStorage.setItem('mahjong-solitaire.tray-intro.v1', '1'); } } catch { /* optional */ } }
   }
 
-  private renderTray(): void { this.ui.renderPlayRule(this.playRule, this.tray.map((tile) => tile.type)); this.ui.setUndoEnabled(this.history.length > 0); }
+  private renderTray(): void { this.ui.renderPlayRule(this.playRule, this.tray.map((tile) => tile.type), this.currentTrayCapacity()); this.ui.setUndoEnabled(this.history.length > 0); }
 
   restart(): void {
     this.discardHint(true); this.invalidateSearch(); this.selected?.setSelected(false); this.selected = null;
@@ -191,6 +192,7 @@ export class MatchManager {
     };
     worker.postMessage({
       kind: 'hint', revision, requestId, tiles: candidate.tiles, playRule: this.playRule, tray: candidate.tray, nodeLimit: 1_000_000,
+      trayCapacity: this.currentTrayCapacity(),
       avoidStateHashes: [...this.hintVisitedStateHashes],
     });
   }
@@ -251,7 +253,7 @@ export class MatchManager {
       window.clearTimeout(this.searchTimer); worker.terminate(); this.worker = undefined;
       this.finishShuffle(revision, before, { status: 'FAILED', attempts: 0, rejectedUnsolvable: 0, rejectedUnknown: 1 });
     };
-    worker.postMessage({ kind: 'shuffle', revision, tiles: before.tiles, playRule: this.playRule, tray: before.tray, nodeLimit: 1_000_000, maxAttempts: 24,
+    worker.postMessage({ kind: 'shuffle', revision, tiles: before.tiles, playRule: this.playRule, tray: before.tray, trayCapacity: this.currentTrayCapacity(), nodeLimit: 1_000_000, maxAttempts: 24,
       seed: (revision * 2654435761) >>> 0 });
   }
 
@@ -304,7 +306,7 @@ export class MatchManager {
       if (data.revision !== this.revision || data.revision !== revision) return;
       window.clearTimeout(this.searchTimer); worker.terminate(); this.worker = undefined; this.applySearchResult(revision, candidate, data.result);
     };
-    worker.postMessage({ kind: 'analyze', revision, tiles: candidate.tiles, playRule: this.playRule, tray: candidate.tray, nodeLimit: 1_000_000 });
+    worker.postMessage({ kind: 'analyze', revision, tiles: candidate.tiles, playRule: this.playRule, tray: candidate.tray, trayCapacity: this.currentTrayCapacity(), nodeLimit: 1_000_000 });
   }
 
   private applySearchResult(revision: number, candidate: Snapshot, result: SearchResult): void {
@@ -328,6 +330,12 @@ export class MatchManager {
   }
 
   private currentStateHash(): string { return this.playRule === 'pair' ? this.board.stateHash() : `${this.board.stateHash()}#${this.tray.map((tile) => `${tile.id}:${tile.type}`).sort().join(',')}`; }
+
+  private currentTrayCapacity(): number {
+    return this.mode === 'tour' && this.stageId
+      ? DIORAMA_STAGES[this.stageId].trayCapacity
+      : DIFFICULTIES[this.board.difficulty].trayCapacity;
+  }
 
   private refreshControls(): void {
     this.ui.setShuffling(this.shuffling, this.board.difficulty, this.hints, this.shuffles);
@@ -378,7 +386,20 @@ export class MatchManager {
       const completed = value.completed.filter((id): id is DioramaStageId => DIORAMA_STAGE_ORDER.includes(id as DioramaStageId));
       const valid = unlocked.includes('gate') && completed.every((id) => unlocked.includes(id) && DIORAMA_STAGE_ORDER.slice(0, DIORAMA_STAGE_ORDER.indexOf(id)).every((previous) => completed.includes(previous))) &&
         unlocked.every((id) => id === 'gate' || completed.includes(DIORAMA_STAGE_ORDER[DIORAMA_STAGE_ORDER.indexOf(id) - 1]));
-      if (valid) { this.unlocked = new Set(unlocked); this.completed = new Set(completed); }
+      if (valid) { this.unlocked = new Set(unlocked); this.completed = new Set(completed); return; }
+
+      // The original tour contained Gate → Tower → Bridge → Dragon. Retain
+      // that completed prefix, then unlock the first newly inserted stage.
+      const legacyIds = new Set(['gate', 'tower', 'bridge', 'dragon']);
+      if (![...value.unlocked, ...value.completed].every((id) => typeof id === 'string' && legacyIds.has(id))) return;
+      const legacyCompleted = new Set(value.completed);
+      const migrated: DioramaStageId[] = [];
+      for (const id of ['gate', 'tower', 'bridge'] as const) {
+        if (!legacyCompleted.has(id)) break;
+        migrated.push(id);
+      }
+      const next = DIORAMA_STAGE_ORDER[migrated.length];
+      this.completed = new Set(migrated); this.unlocked = new Set([...migrated, ...(next ? [next] : [])]); this.saveProgression();
     } catch { /* storage is optional */ }
   }
   private saveProgression(): void { try { localStorage.setItem(`mahjong-solitaire.tour-progress.v1.${this.playRule}`, JSON.stringify({ unlocked: [...this.unlocked], completed: [...this.completed] })); } catch { /* gameplay remains available */ } }
@@ -394,6 +415,7 @@ export class MatchManager {
       this.playRule = game.playRule; this.tray = game.tray.map((tile) => ({ ...tile }));
       if (game.mode === 'tour') { this.mode = 'tour'; this.stageId = game.stageId; this.unlocked = new Set(game.unlockedStages); this.completed = new Set(game.completedStages); this.board.restoreDioramaGeometry(game.stageId); }
       else { this.mode = 'classic'; this.stageId = undefined; this.board.newDeal(game.difficulty); }
+      if (this.tray.length > this.currentTrayCapacity()) throw new Error('Saved tray exceeds this level capacity');
       this.board.restoreInitialDeal(game.initialTiles); this.board.restore(game.tiles);
       this.moves = game.moves; this.hints = game.hints; this.shuffles = game.shuffles;
       this.history = this.cloneHistory(game.history);

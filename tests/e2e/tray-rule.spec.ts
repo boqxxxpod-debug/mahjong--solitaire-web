@@ -37,6 +37,8 @@ test('tray rule switches independently, survives reload, prevents duplicate taps
   await page.goto('/'); await page.locator('#mode-menu').click(); await page.locator('[data-rule="tray"]').click();
   const tray = page.locator('#tray'); await expect(tray).toBeVisible();
   await expect(page.locator('#tray-slots .tray-slot')).toHaveCount(5);
+  await expect(page.locator('#tray-slots .tray-slot[data-locked]')).toHaveCount(1);
+  await expect(tray).toHaveAttribute('aria-label', '4枠トレイ');
 
   const pair = await page.evaluate(() => {
     const game = (window as typeof window & { __mahjongGameTest: any }).__mahjongGameTest;

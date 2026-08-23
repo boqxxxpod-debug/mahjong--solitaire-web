@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { TileFace } from './TileFace';
+import { TILE_FACE_HEIGHT, TILE_FACE_WIDTH, TileFace } from './TileFace';
 
 export const TILE_WIDTH = 2.5;
 export const TILE_HEIGHT = 0.72;
@@ -8,10 +8,10 @@ export const TILE_DEPTH = 3.2;
 // adjacent rows sit exactly edge-to-edge with no gap or overlap in world space.
 export const TILE_ROW_STRIDE = TILE_DEPTH * 0.5;
 export const TILE_LAYER_HEIGHT = TILE_HEIGHT * 1.14;
-// Lean each successive storey slightly towards the camera. This keeps the
-// stack's diorama silhouette but prevents its raised face from landing exactly
-// on top of the rear face below it in the camera projection.
-export const TILE_LAYER_DEPTH_OFFSET = TILE_DEPTH * 0.09;
+// A raised tile must stay directly above its logical footprint. Offsetting
+// successive layers towards the camera made an upper tile's artwork appear on
+// an unrelated lower tile (the overlapping glyph reported in the screenshot).
+export const TILE_LAYER_DEPTH_OFFSET = 0;
 
 export class BoardGeometry {
   readonly geometry = new THREE.BoxGeometry(TILE_WIDTH, TILE_HEIGHT, TILE_DEPTH, 2, 1, 2);
@@ -40,15 +40,16 @@ export class BoardGeometry {
 
 
   private createBackTexture(): THREE.CanvasTexture {
-    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 256;
+    const canvas = document.createElement('canvas'); canvas.width = TILE_FACE_WIDTH; canvas.height = TILE_FACE_HEIGHT;
     const context = canvas.getContext('2d')!;
-    context.fillStyle = '#075b55'; context.fillRect(0, 0, 256, 256);
+    context.fillStyle = '#075b55'; context.fillRect(0, 0, canvas.width, canvas.height);
     context.strokeStyle = '#3aa38e'; context.lineWidth = 7;
-    context.strokeRect(20, 20, 216, 216); context.strokeRect(36, 36, 184, 184);
+    context.strokeRect(20, 20, canvas.width - 40, canvas.height - 40);
+    context.strokeRect(36, 36, canvas.width - 72, canvas.height - 72);
     context.globalAlpha = 0.35; context.lineWidth = 3;
-    for (let offset = -256; offset < 512; offset += 32) {
-      context.beginPath(); context.moveTo(offset, 0); context.lineTo(offset + 256, 256); context.stroke();
-      context.beginPath(); context.moveTo(offset + 256, 0); context.lineTo(offset, 256); context.stroke();
+    for (let offset = -canvas.height; offset < canvas.width + canvas.height; offset += 32) {
+      context.beginPath(); context.moveTo(offset, 0); context.lineTo(offset + canvas.height, canvas.height); context.stroke();
+      context.beginPath(); context.moveTo(offset, 0); context.lineTo(offset - canvas.height, canvas.height); context.stroke();
     }
     const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
     return texture;

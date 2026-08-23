@@ -2,8 +2,22 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { analyzeBoard, analyzeTrayBoard, createCertifiedShuffle, createFaceDownFlags, findSolvableRemovalOrder, generateSolvableTypes, getAvailableActions, getAvailablePairs, getTrayMoves, hasAvailableAction, hasAvailablePair, isClear, isFreeTile, isStuck, isTileUncovered, isTrayGameOver, moveTileToTray, removePair, resetTiles, shuffleActiveTypes, TRAY_CAPACITY } from '../.test-dist/GameRules.js';
 import { COMPACT_LAYOUT, COMPACT_POSITIONS, TILE_PAIR_FACES, DIFFICULTIES, createSolvableDeal, createSolvableLayout } from '../.test-dist/BoardLayout.js';
+import { getTileFaceLabel, MAHJONG_FACES, parseSuitedFace } from '../.test-dist/TileCatalog.js';
 
 const row = (types) => types.map((type, id) => ({ id, type, x: id * 2, y: 0, z: 0, removed: false }));
+
+test('face catalog contains the 34 standard mahjong identities', () => {
+  assert.equal(MAHJONG_FACES.length, 34); assert.equal(new Set(MAHJONG_FACES).size, 34);
+  assert.equal(MAHJONG_FACES.filter((face) => parseSuitedFace(face)?.suit === 'characters').length, 9);
+  assert.equal(MAHJONG_FACES.filter((face) => parseSuitedFace(face)?.suit === 'dots').length, 9);
+  assert.equal(MAHJONG_FACES.filter((face) => parseSuitedFace(face)?.suit === 'bamboo').length, 9);
+  assert.equal(MAHJONG_FACES.filter((face) => face.startsWith('wind-')).length, 4);
+  assert.equal(MAHJONG_FACES.filter((face) => face.startsWith('dragon-')).length, 3);
+  assert.equal(getTileFaceLabel('characters-9'), '九萬');
+  assert.equal(getTileFaceLabel('dots-3'), '三筒');
+  assert.equal(getTileFaceLabel('bamboo-1'), '一索');
+  assert.equal(getTileFaceLabel('dragon-green'), '發');
+});
 
 test('only the ends of an unbroken row are free', () => {
   const tiles = row(['a', 'b', 'b', 'a']);
@@ -52,6 +66,18 @@ test('tray holds five unmatched tiles, auto-removes a pair, and accepts a full r
 test('full tray without a matching free tile is game over', () => {
   const tiles = row(['z']); const tray = row(['a', 'b', 'c', 'd', 'e']).map((tile) => ({ ...tile, removed: true }));
   assert.equal(isTrayGameOver(tiles, tray), true); assert.equal(moveTileToTray(tiles[0], tiles, tray), null);
+});
+
+test('later levels reduce the usable tray to three slots without removing rescue matches', () => {
+  const capacity = 3;
+  const tiles = row(['a', 'b', 'c', 'd', 'a']); tiles.forEach((tile, id) => { tile.x = id * 3; });
+  let tray = [];
+  for (const id of [0, 1, 2]) tray = moveTileToTray(tiles[id], tiles, tray, capacity);
+  assert.equal(tray.length, capacity);
+  assert.equal(moveTileToTray(tiles[3], tiles, tray, capacity), null, 'a fourth unmatched tile is blocked');
+  assert.deepEqual(getTrayMoves(tiles, tray, capacity).map((tile) => tile.id), [4]);
+  tray = moveTileToTray(tiles[4], tiles, tray, capacity);
+  assert.equal(tray.length, 2); assert.equal(tray.some((tile) => tile.type === 'a'), false);
 });
 
 test('tray solver includes held tiles and prefers their matching rescue', () => {
@@ -133,7 +159,7 @@ test('certified hidden deals retain a full solution under the one-reveal rule', 
       id, type, ...position, removed: false, faceDown: deal.faceDown[id], originallyFaceDown: deal.faceDown[id],
     }));
     assert.equal(analyzeBoard(tiles).solvable, true, `${difficulty} hidden deal must be solvable`);
-    assert.equal(analyzeTrayBoard(tiles, [], 1_000_000).solvable, true, `${difficulty} hidden deal must also be tray-solvable`);
+    assert.equal(analyzeTrayBoard(tiles, [], 1_000_000, DIFFICULTIES[difficulty].trayCapacity).solvable, true, `${difficulty} hidden deal must also be tray-solvable`);
   }
 });
 
