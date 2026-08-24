@@ -12,7 +12,7 @@ import {
   type TilePosition,
   type TileState,
 } from './GameRules.js';
-import { createTrayChallengeTypes, TILE_FACES } from './BoardLayout.js';
+import { createSeparatedTrayChallengeTypes, TILE_FACES } from './BoardLayout.js';
 
 export type DioramaStageId =
   | 'gate'
@@ -144,14 +144,14 @@ export function createDioramaDeal(stageId: DioramaStageId, random: RandomSource 
   return { stageId, tiles, solution, removalPairs: order.map((pair) => [...pair] as const), stateHash: boardStateHash(tiles) };
 }
 
-/** Higher tray stages intentionally separate matching faces. The recorded
- * actions fill the tray first, then clear it with later free tiles. */
+/** Higher tray stages intentionally keep several unmatched faces in storage.
+ * The certified route stays near capacity while later free tiles rescue them. */
 export function createDioramaTrayDeal(stageId: DioramaStageId, random: RandomSource = Math.random): DioramaDeal {
   const stage = DIORAMA_STAGES[stageId];
   if (!stage) throw new Error(`Unknown diorama stage: ${stageId}`);
   if (!stage.trayChallenge) return createDioramaDeal(stageId, random);
   const order = removalOrder(stage);
-  const types = createTrayChallengeTypes(order, stage.trayCapacity, random);
+  const types = createSeparatedTrayChallengeTypes(stage.positions, order, stage.trayCapacity, random);
   const pairOnlyTiles = buildTiles(stage, types, new Set<number>());
   if (analyzeBoard(pairOnlyTiles, 100_000).status !== 'UNSOLVABLE') throw new Error(`${stageId} tray deal still has a pair-only solution`);
   const hidden = hiddenForStage(stage, order, random);

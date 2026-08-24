@@ -82,12 +82,13 @@ function pairFaces(pairCount: number): string[] {
 }
 
 /**
- * Assigns faces across several consecutive legal removal pairs instead of
- * putting the same face on each pair. Following the recorded removal order
- * therefore fills the tray before later tiles release those stored faces.
+ * Spreads matching faces across the full certified removal route instead of
+ * resolving them in short local blocks. The route first fills every tray slot
+ * with a different face, then alternates one delayed match with one fresh face
+ * so the tray stays near capacity for most of the board.
  *
- * Capacity 4 blocks: AB / CD / AC / BD
- * Capacity 3 blocks: AB / CA / BC
+ * This makes the intended play fundamentally forward-looking: players must
+ * remember several unmatched faces and uncover their partners many moves later.
  */
 export function createTrayChallengeTypes(
   removalPairs: readonly (readonly [number, number])[],
@@ -96,37 +97,29 @@ export function createTrayChallengeTypes(
 ): string[] {
   if (capacity < 2) throw new Error('Tray challenge requires at least two slots');
   const values = shuffledFaces(removalPairs.length, random);
-  const result = Array<string>(removalPairs.length * 2);
+  const active: string[] = [];
+  const sequence: string[] = [];
+  let next = 0;
 
-  const assign = (pairIndex: number, firstFace: string, secondFace: string): void => {
-    const [firstId, secondId] = removalPairs[pairIndex];
-    result[firstId] = firstFace; result[secondId] = secondFace;
-  };
-
-  let index = 0;
-  while (index < removalPairs.length) {
-    const remaining = removalPairs.length - index;
-    if (capacity >= 4 && remaining >= 4) {
-      const [a, b, c, d] = values.slice(index, index + 4);
-      assign(index, a, b); assign(index + 1, c, d);
-      assign(index + 2, a, c); assign(index + 3, b, d);
-      index += 4; continue;
-    }
-    if (remaining >= 3) {
-      const [a, b, c] = values.slice(index, index + 3);
-      assign(index, a, b); assign(index + 1, c, a); assign(index + 2, b, c);
-      index += 3; continue;
-    }
-    if (remaining === 2) {
-      const [a, b] = values.slice(index, index + 2);
-      assign(index, a, b); assign(index + 1, a, b);
-      index += 2; continue;
-    }
-    const [firstId, secondId] = removalPairs[index];
-    result[firstId] = result[secondId] = values[index];
-    index++;
+  while (next < values.length && active.length < capacity) {
+    const face = values[next++];
+    active.push(face); sequence.push(face);
+  }
+  while (next < values.length) {
+    const closeIndex = Math.floor(random() * active.length);
+    sequence.push(active.splice(closeIndex, 1)[0]);
+    const face = values[next++];
+    active.push(face); sequence.push(face);
+  }
+  while (active.length) {
+    const closeIndex = Math.floor(random() * active.length);
+    sequence.push(active.splice(closeIndex, 1)[0]);
   }
 
+  const tileOrder = removalPairs.flat();
+  if (sequence.length !== tileOrder.length) throw new Error('Tray challenge sequence length does not match board');
+  const result = Array<string>(tileOrder.length);
+  tileOrder.forEach((tileId, index) => { result[tileId] = sequence[index]; });
   if (result.some((face) => !face)) throw new Error('Tray challenge did not assign every tile');
   return result;
 }
@@ -199,31 +192,46 @@ function pairOnlyStatus(positions: readonly TilePosition[], faces: readonly stri
   return analyzeBoard(tiles, 100_000).status === 'UNSOLVABLE' ? 'UNSOLVABLE' : 'OTHER';
 }
 
-/** A tray-only deal: higher difficulties deliberately separate matching faces
- * and reject any layout that still has a complete pair-only solution. */
+function deterministicTrayRandom(seed: number): RandomSource {
+  let state = seed >>> 0;
+  return () => ((state = (Math.imul(state, 1664525) + 1013904223) >>> 0) / 2 ** 32);
+}
+
+/**
+ * Produces a rolling-pressure tray assignment that also has no complete
+ * pair-only solution. Random candidates preserve variety; deterministic
+ * fallbacks guarantee that an unlucky seed never prevents a board from loading.
+ */
+export function createSeparatedTrayChallengeTypes(
+  positions: readonly TilePosition[],
+  removalPairs: readonly (readonly [number, number])[],
+  capacity: number,
+  random: RandomSource = Math.random,
+): string[] {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const candidate = createTrayChallengeTypes(removalPairs, capacity, random);
+    if (pairOnlyStatus(positions, candidate) === 'UNSOLVABLE') return candidate;
+  }
+  for (let seed = 1; seed <= 32; seed++) {
+    const candidate = createTrayChallengeTypes(removalPairs, capacity, deterministicTrayRandom(Math.imul(seed, 0x9e3779b1)));
+    if (pairOnlyStatus(positions, candidate) === 'UNSOLVABLE') return candidate;
+  }
+  throw new Error('Could not create a separated tray challenge');
+}
+
+/** A tray-only deal: matching faces are spread deep into the legal route and
+ * every accepted layout is rejected if pair-only play can still clear it. */
 export function createTrayChallengeDeal(difficulty: Difficulty = 'normal', random: RandomSource = Math.random): TrayChallengeDeal {
   const config = DIFFICULTIES[difficulty];
   if (!config.trayChallenge) return createSolvableDeal(difficulty, random);
   const positions = config.positions;
-  let order: Array<readonly [number, number]> | undefined;
-  let faces: string[] | undefined;
-
-  if (difficulty === 'hard') {
-    order = HARD_REMOVAL_ORDER;
-    faces = createTrayChallengeTypes(order, config.trayCapacity, random);
-  } else {
-    for (let attempt = 0; attempt < 8; attempt++) {
-      const candidateOrder = findSolvableRemovalOrder(positions, random);
-      const candidateFaces = createTrayChallengeTypes(candidateOrder, config.trayCapacity, random);
-      if (pairOnlyStatus(positions, candidateFaces) === 'UNSOLVABLE') {
-        order = candidateOrder; faces = candidateFaces; break;
-      }
-    }
-    if (!order || !faces) {
-      order = findSolvableRemovalOrder(positions, () => 0.5);
-      faces = createTrayChallengeTypes(order, config.trayCapacity, () => 0.5);
-    }
+  let order: Array<readonly [number, number]>;
+  try {
+    order = difficulty === 'hard' ? HARD_REMOVAL_ORDER : findSolvableRemovalOrder(positions, random);
+  } catch {
+    order = difficulty === 'hard' ? HARD_REMOVAL_ORDER : findSolvableRemovalOrder(positions, () => 0.5);
   }
+  const faces = createSeparatedTrayChallengeTypes(positions, order, config.trayCapacity, random);
   if (pairOnlyStatus(positions, faces) !== 'UNSOLVABLE') throw new Error(`${difficulty} tray deal still has a pair-only solution`);
 
   const target = Math.round(positions.length * (difficulty === 'normal' ? 0.125 : 0.225));
