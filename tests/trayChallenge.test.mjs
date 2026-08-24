@@ -62,6 +62,13 @@ function minimumMatchGap(initial, tileOrder) {
   return minimum;
 }
 
+test('Tour tightens tray capacity before the final half', () => {
+  assert.deepEqual(
+    DIORAMA_STAGE_ORDER.map((id) => DIORAMA_STAGES[id].trayCapacity),
+    [5, 5, 4, 4, 3, 3, 3, 3, 3, 3],
+  );
+});
+
 test('higher classic tray deals sustain near-full storage pressure and deep match spacing', () => {
   for (const difficulty of ['normal', 'hard']) {
     const config = DIFFICULTIES[difficulty];
