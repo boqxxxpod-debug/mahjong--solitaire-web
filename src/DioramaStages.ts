@@ -130,10 +130,14 @@ function applyGateMetadata(
   if (!stage.gateChallenge) return source.map((tile) => ({ ...tile }));
   const gateId = `${stage.id}:core`;
   const keys = new Set(order[0]);
-  const gated = new Set(source
+  const openingBranches = source
     .filter((tile) => !keys.has(tile.id) && isFreeTile(tile, source))
-    .map((tile) => tile.id));
-  if (!gated.size) throw new Error(`${stage.id} has no opening branch to gate`);
+    .map((tile) => tile.id);
+  // Some layouts (notably Great Wall) naturally expose only the certified
+  // opening pair. In that case lock the next certified pair so the gate remains
+  // explicit without inventing an impossible alternate opening branch.
+  const gated = new Set(openingBranches.length ? openingBranches : (order[1] ?? []));
+  if (!gated.size) throw new Error(`${stage.id} has no tiles available for a gate`);
   return source.map((tile) => ({
     ...tile,
     gateKey: keys.has(tile.id) ? gateId : undefined,
