@@ -130,8 +130,10 @@ function applyGateMetadata(
   if (!stage.gateChallenge) return source.map((tile) => ({ ...tile }));
   const gateId = `${stage.id}:core`;
   const keys = new Set(order[0]);
-  const gateStart = Math.max(1, Math.floor(order.length * 0.55));
-  const gated = new Set(order.slice(gateStart).flat());
+  const gated = new Set(source
+    .filter((tile) => !keys.has(tile.id) && isFreeTile(tile, source))
+    .map((tile) => tile.id));
+  if (!gated.size) throw new Error(`${stage.id} has no opening branch to gate`);
   return source.map((tile) => ({
     ...tile,
     gateKey: keys.has(tile.id) ? gateId : undefined,
