@@ -1,5 +1,6 @@
 import { analyzeBoard, findSolvableRemovalOrder, generateSolvableTypes, RandomSource, TilePosition, type TileState } from './GameRules.js';
 import { MAHJONG_FACES } from './TileCatalog.js';
+import { countFullTrayDistractorMoments } from './TrayChallenge.js';
 
 export type Difficulty = 'easy' | 'normal' | 'hard';
 export interface TileLayout extends TilePosition { face: string; }
@@ -196,11 +197,24 @@ export function createSolvableDeal(difficulty: Difficulty = 'normal', random: Ra
   };
 }
 
-function pairOnlyStatus(positions: readonly TilePosition[], faces: readonly string[]): 'UNSOLVABLE' | 'OTHER' {
-  const tiles: TileState[] = positions.map((position, id) => ({
+function statesForFaces(positions: readonly TilePosition[], faces: readonly string[]): TileState[] {
+  return positions.map((position, id) => ({
     id, type: faces[id], ...position, removed: false, faceDown: false, originallyFaceDown: false,
   }));
-  return analyzeBoard(tiles, 100_000).status === 'UNSOLVABLE' ? 'UNSOLVABLE' : 'OTHER';
+}
+
+function pairOnlyStatus(positions: readonly TilePosition[], faces: readonly string[]): 'UNSOLVABLE' | 'OTHER' {
+  return analyzeBoard(statesForFaces(positions, faces), 100_000).status === 'UNSOLVABLE' ? 'UNSOLVABLE' : 'OTHER';
+}
+
+function hasRequiredTrayDistractor(
+  positions: readonly TilePosition[],
+  faces: readonly string[],
+  removalPairs: readonly (readonly [number, number])[],
+  capacity: number,
+): boolean {
+  if (positions.length < 40) return true;
+  return countFullTrayDistractorMoments(statesForFaces(positions, faces), removalPairs.flat(), capacity) > 0;
 }
 
 function deterministicTrayRandom(seed: number): RandomSource {
@@ -210,8 +224,11 @@ function deterministicTrayRandom(seed: number): RandomSource {
 
 /**
  * Produces a rolling-pressure tray assignment that also has no complete
- * pair-only solution. Random candidates preserve variety; deterministic
- * fallbacks guarantee that an unlucky seed never prevents a board from loading.
+ * pair-only solution. On boards of 40+ tiles it additionally requires a
+ * full-tray moment where multiple visible FREE TILEs are decoys and only a
+ * held-face match can be accepted safely. Random candidates preserve variety;
+ * deterministic fallbacks guarantee that an unlucky seed never prevents a
+ * board from loading.
  */
 export function createSeparatedTrayChallengeTypes(
   positions: readonly TilePosition[],
@@ -219,13 +236,13 @@ export function createSeparatedTrayChallengeTypes(
   capacity: number,
   random: RandomSource = Math.random,
 ): string[] {
-  for (let attempt = 0; attempt < 8; attempt++) {
+  for (let attempt = 0; attempt < 12; attempt++) {
     const candidate = createTrayChallengeTypes(removalPairs, capacity, random);
-    if (pairOnlyStatus(positions, candidate) === 'UNSOLVABLE') return candidate;
+    if (pairOnlyStatus(positions, candidate) === 'UNSOLVABLE' && hasRequiredTrayDistractor(positions, candidate, removalPairs, capacity)) return candidate;
   }
-  for (let seed = 1; seed <= 32; seed++) {
+  for (let seed = 1; seed <= 64; seed++) {
     const candidate = createTrayChallengeTypes(removalPairs, capacity, deterministicTrayRandom(Math.imul(seed, 0x9e3779b1)));
-    if (pairOnlyStatus(positions, candidate) === 'UNSOLVABLE') return candidate;
+    if (pairOnlyStatus(positions, candidate) === 'UNSOLVABLE' && hasRequiredTrayDistractor(positions, candidate, removalPairs, capacity)) return candidate;
   }
   throw new Error('Could not create a separated tray challenge');
 }
@@ -244,6 +261,7 @@ export function createTrayChallengeDeal(difficulty: Difficulty = 'normal', rando
   }
   const faces = createSeparatedTrayChallengeTypes(positions, order, config.trayCapacity, random);
   if (pairOnlyStatus(positions, faces) !== 'UNSOLVABLE') throw new Error(`${difficulty} tray deal still has a pair-only solution`);
+  if (!hasRequiredTrayDistractor(positions, faces, order, config.trayCapacity)) throw new Error(`${difficulty} tray deal lacks a distractor moment`);
 
   const target = Math.round(positions.length * (difficulty === 'normal' ? 0.125 : 0.225));
   const candidates = order.map((pair) => pair[random() < 0.5 ? 0 : 1]);
