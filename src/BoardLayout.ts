@@ -81,14 +81,25 @@ function pairFaces(pairCount: number): string[] {
   return Array.from({ length: pairCount }, (_, index) => TILE_FACES[index % TILE_FACES.length]);
 }
 
+interface HeldTrayFace { face: string; openedAt: number; }
+
+function closeEligibleFace(active: HeldTrayFace[], sequenceLength: number, capacity: number, random: RandomSource): string {
+  const eligible = active
+    .map((held, index) => ({ held, index }))
+    .filter(({ held }) => sequenceLength - held.openedAt >= capacity);
+  if (!eligible.length) throw new Error('Tray challenge could not preserve minimum match distance');
+  const chosen = eligible[Math.floor(random() * eligible.length)];
+  if (!chosen) throw new Error('Random source produced an invalid tray close');
+  active.splice(chosen.index, 1);
+  return chosen.held.face;
+}
+
 /**
  * Spreads matching faces across the full certified removal route instead of
- * resolving them in short local blocks. The route first fills every tray slot
- * with a different face, then closes the oldest held face before introducing a
- * fresh one. FIFO closing is deliberate: it guarantees that every matching
- * partner is at least `capacity` taps away from its first tile, creating a real
- * dependency chain instead of allowing a newly introduced face to be rescued
- * immediately by a lucky random close.
+ * resolving them in short local blocks. A partner cannot close until at least
+ * `capacity` taps after its first tile. Once several held faces are old enough,
+ * the close remains randomized so the generator can still reject pair-only
+ * solvable arrangements and search for a genuinely tray-dependent board.
  */
 export function createTrayChallengeTypes(
   removalPairs: readonly (readonly [number, number])[],
@@ -97,20 +108,24 @@ export function createTrayChallengeTypes(
 ): string[] {
   if (capacity < 2) throw new Error('Tray challenge requires at least two slots');
   const values = shuffledFaces(removalPairs.length, random);
-  const active: string[] = [];
+  const active: HeldTrayFace[] = [];
   const sequence: string[] = [];
   let next = 0;
 
   while (next < values.length && active.length < capacity) {
     const face = values[next++];
-    active.push(face); sequence.push(face);
+    active.push({ face, openedAt: sequence.length });
+    sequence.push(face);
   }
   while (next < values.length) {
-    sequence.push(active.shift()!);
+    sequence.push(closeEligibleFace(active, sequence.length, capacity, random));
     const face = values[next++];
-    active.push(face); sequence.push(face);
+    active.push({ face, openedAt: sequence.length });
+    sequence.push(face);
   }
-  while (active.length) sequence.push(active.shift()!);
+  while (active.length) {
+    sequence.push(closeEligibleFace(active, sequence.length, capacity, random));
+  }
 
   const tileOrder = removalPairs.flat();
   if (sequence.length !== tileOrder.length) throw new Error('Tray challenge sequence length does not match board');
