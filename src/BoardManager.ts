@@ -155,14 +155,21 @@ export class BoardManager {
   }
 
   restoreInitialDeal(initial: readonly TileState[]): void {
-    if (initial.length !== this.tiles.length || initial.some((state, index) => state.id !== index || state.x !== this.tiles[index].logical.x ||
-      state.y !== this.tiles[index].logical.y || state.z !== this.tiles[index].logical.z || state.removed ||
-      Boolean(state.faceDown) !== Boolean(state.originallyFaceDown) || state.gateKey !== this.tiles[index].gateKey || state.gateGroup !== this.tiles[index].gateGroup) ||
-      initial.map((tile) => tile.type).sort().join('\0') !== this.tiles.map((tile) => tile.type).sort().join('\0') ||
+    if (initial.length !== this.tiles.length || initial.some((state, index) => {
+      const hasSavedGateMetadata = state.gateKey !== undefined || state.gateGroup !== undefined;
+      return state.id !== index || state.x !== this.tiles[index].logical.x || state.y !== this.tiles[index].logical.y ||
+        state.z !== this.tiles[index].logical.z || state.removed || Boolean(state.faceDown) !== Boolean(state.originallyFaceDown) ||
+        (hasSavedGateMetadata && (state.gateKey !== this.tiles[index].gateKey || state.gateGroup !== this.tiles[index].gateGroup));
+    }) || initial.map((tile) => tile.type).sort().join('\0') !== this.tiles.map((tile) => tile.type).sort().join('\0') ||
       initial.filter((tile) => tile.originallyFaceDown).length !== this.tiles.filter((tile) => tile.originallyFaceDown).length) {
       throw new Error('Saved initial deal does not match board');
     }
-    this.initialDeal = initial.map((tile) => ({ type: tile.type, faceDown: Boolean(tile.faceDown), gateKey: tile.gateKey, gateGroup: tile.gateGroup }));
+    this.initialDeal = initial.map((tile, index) => ({
+      type: tile.type,
+      faceDown: Boolean(tile.faceDown),
+      gateKey: this.tiles[index].gateKey,
+      gateGroup: this.tiles[index].gateGroup,
+    }));
     this.tiles.forEach((tile, index) => { tile.originallyFaceDown = Boolean(initial[index].originallyFaceDown); });
   }
 
@@ -185,9 +192,7 @@ export class BoardManager {
   analyzeProgress() { return analyzeBoard(this.states(), 50_000); }
 
   restore(states: readonly TileState[]): void {
-    if (states.length !== this.tiles.length || states.some((state, index) => state.gateKey !== this.tiles[index].gateKey || state.gateGroup !== this.tiles[index].gateGroup)) {
-      throw new Error('Snapshot does not match board');
-    }
+    if (states.length !== this.tiles.length) throw new Error('Snapshot does not match board');
     this.discardHintPlan();
     states.forEach((state, index) => {
       const tile = this.tiles[index];
