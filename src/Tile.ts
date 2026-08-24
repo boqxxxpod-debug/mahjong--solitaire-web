@@ -21,7 +21,15 @@ export class Tile {
   private feedbackTimer?: number;
   private flipGeneration = 0;
   private removalGeneration = 0;
-  constructor(readonly id: number, public type: string, readonly logical: TilePosition, private readonly geometry: BoardGeometry, faceDown = false) {
+  constructor(
+    readonly id: number,
+    public type: string,
+    readonly logical: TilePosition,
+    private readonly geometry: BoardGeometry,
+    faceDown = false,
+    readonly gateKey?: string,
+    readonly gateGroup?: string,
+  ) {
     this.faceDown = faceDown;
     this.originallyFaceDown = faceDown;
     this.displayedFaceDown = faceDown;
@@ -91,8 +99,8 @@ export class Tile {
     this.selected = selected;
     this.mesh.position.y = this.logical.z * TILE_LAYER_HEIGHT + (selected ? 0.32 : 0);
     this.materials().forEach((material) => {
-      material.emissive.setHex(selected ? 0x2b8f77 : 0x000000);
-      material.emissiveIntensity = selected ? 0.5 : 0;
+      material.emissive.setHex(selected ? 0x2b8f77 : this.gateKey ? 0xd4a72c : 0x000000);
+      material.emissiveIntensity = selected ? 0.5 : this.gateKey ? 0.18 : 0;
     });
   }
 
