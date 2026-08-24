@@ -84,11 +84,11 @@ function pairFaces(pairCount: number): string[] {
 /**
  * Spreads matching faces across the full certified removal route instead of
  * resolving them in short local blocks. The route first fills every tray slot
- * with a different face, then alternates one delayed match with one fresh face
- * so the tray stays near capacity for most of the board.
- *
- * This makes the intended play fundamentally forward-looking: players must
- * remember several unmatched faces and uncover their partners many moves later.
+ * with a different face, then closes the oldest held face before introducing a
+ * fresh one. FIFO closing is deliberate: it guarantees that every matching
+ * partner is at least `capacity` taps away from its first tile, creating a real
+ * dependency chain instead of allowing a newly introduced face to be rescued
+ * immediately by a lucky random close.
  */
 export function createTrayChallengeTypes(
   removalPairs: readonly (readonly [number, number])[],
@@ -106,15 +106,11 @@ export function createTrayChallengeTypes(
     active.push(face); sequence.push(face);
   }
   while (next < values.length) {
-    const closeIndex = Math.floor(random() * active.length);
-    sequence.push(active.splice(closeIndex, 1)[0]);
+    sequence.push(active.shift()!);
     const face = values[next++];
     active.push(face); sequence.push(face);
   }
-  while (active.length) {
-    const closeIndex = Math.floor(random() * active.length);
-    sequence.push(active.splice(closeIndex, 1)[0]);
-  }
+  while (active.length) sequence.push(active.shift()!);
 
   const tileOrder = removalPairs.flat();
   if (sequence.length !== tileOrder.length) throw new Error('Tray challenge sequence length does not match board');
