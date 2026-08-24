@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyzeBoard, analyzeTrayBoard, boardStateHash, getAvailableActions, isFreeTile } from '../.test-dist/GameRules.js';
+import { analyzeBoard, analyzeTrayBoard, boardStateHash, getAvailableActions, isFreeTile, isGateLocked } from '../.test-dist/GameRules.js';
 import { DIFFICULTIES, createTrayChallengeDeal } from '../.test-dist/BoardLayout.js';
 import { DIORAMA_STAGE_ORDER, DIORAMA_STAGES, createDioramaDeal, createDioramaTrayDeal, replayDioramaCertificate, replayDioramaTrayCertificate } from '../.test-dist/DioramaStages.js';
 
@@ -33,6 +33,7 @@ test('catalog has ten stable stages with a strictly increasing difficulty curve'
     assert.ok(positions.length > 0 && positions.length <= 68 && positions.length % 2 === 0, `${id} has a valid even count`);
     assert.ok(stage.hiddenRatio >= 0 && stage.hiddenRatio <= 0.25);
     assert.equal(stage.trayChallenge, index >= 2, `${id} tray challenge threshold`);
+    assert.equal(stage.gateChallenge, index >= 5, `${id} gate challenge threshold`);
     if (index) {
       const previous = DIORAMA_STAGES[DIORAMA_STAGE_ORDER[index - 1]];
       assert.ok(positions.length > previous.positions.length, `${id} adds tiles`);
@@ -77,6 +78,32 @@ test('seeded deals reproduce, vary, expose an action, and replay through CLEAR',
     assert.ok(hashes.size >= 20, `${id} meaningfully varies across seeds`);
     const geometry = DIORAMA_STAGES[id].positions.map((position, tileId) => ({ id: tileId, type: '', ...position, removed: false }));
     assert.ok(geometry.filter((tile) => isFreeTile(tile, geometry)).length >= 2);
+  }
+});
+
+test('Fortress and later stages lock alternate opening branches behind two key tiles', () => {
+  for (const [index, id] of DIORAMA_STAGE_ORDER.entries()) {
+    const stage = DIORAMA_STAGES[id];
+    const deal = createDioramaDeal(id, seeded(7000 + index));
+    const keys = deal.tiles.filter((tile) => tile.gateKey);
+    const gated = deal.tiles.filter((tile) => tile.gateGroup);
+    if (!stage.gateChallenge) {
+      assert.equal(keys.length, 0, `${id} has no keys before Fortress`);
+      assert.equal(gated.length, 0, `${id} has no gated tiles before Fortress`);
+      continue;
+    }
+
+    assert.equal(keys.length, 2, `${id} has exactly two keys`);
+    assert.deepEqual(keys.map((tile) => tile.id).sort((a, b) => a - b), [...deal.removalPairs[0]].sort((a, b) => a - b), `${id} keys are the certified opening pair`);
+    assert.ok(gated.length >= 1, `${id} gates at least one alternate opening tile`);
+    assert.ok(gated.every((tile) => isGateLocked(tile, deal.tiles)), `${id} gated tiles are locked while keys remain`);
+    assert.ok(gated.every((tile) => !isFreeTile(tile, deal.tiles)), `${id} gate overrides normal FREE status`);
+
+    const unlocked = deal.tiles.map((tile) => ({ ...tile, removed: tile.removed || Boolean(tile.gateKey) }));
+    assert.ok(gated.some((tile) => {
+      const candidate = unlocked.find((current) => current.id === tile.id);
+      return candidate && !isGateLocked(candidate, unlocked) && isFreeTile(candidate, unlocked);
+    }), `${id} opens at least one alternate branch after both keys are removed`);
   }
 });
 
