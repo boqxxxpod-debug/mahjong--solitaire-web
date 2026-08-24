@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { DIFFICULTIES, createTrayChallengeDeal } from '../.test-dist/BoardLayout.js';
 import { DIORAMA_STAGE_ORDER, DIORAMA_STAGES, createDioramaTrayDeal } from '../.test-dist/DioramaStages.js';
 import { getAvailablePairs, isTrayClear, moveTileToTray } from '../.test-dist/GameRules.js';
-import { hasForcedTrayStorageMoment } from '../.test-dist/TrayChallenge.js';
+import { countFullTrayDistractorMoments, hasForcedTrayStorageMoment } from '../.test-dist/TrayChallenge.js';
 
 const seeded = (seed) => {
   let state = seed >>> 0;
@@ -69,7 +69,7 @@ test('Tour tightens tray capacity before the final half', () => {
   );
 });
 
-test('higher classic tray deals sustain near-full storage pressure and deep match spacing', () => {
+test('higher classic tray deals sustain pressure, deep spacing, and visible decoys', () => {
   for (const difficulty of ['normal', 'hard']) {
     const config = DIFFICULTIES[difficulty];
     assert.equal(config.trayChallenge, true);
@@ -86,6 +86,10 @@ test('higher classic tray deals sustain near-full storage pressure and deep matc
         minimumMatchGap(states, tileOrder) >= config.trayCapacity,
         `${difficulty} seed ${seed} must delay every partner by at least the tray capacity`,
       );
+      assert.ok(
+        countFullTrayDistractorMoments(states, tileOrder, config.trayCapacity) > 0,
+        `${difficulty} seed ${seed} must expose decoy FREE TILEs while a rescue is available`,
+      );
       const pressure = trayPressure(states, tileOrder, config.trayCapacity);
       assert.equal(pressure.maxTrayLoad, config.trayCapacity, `${difficulty} seed ${seed} must fill every tray slot`);
       assert.ok(
@@ -97,7 +101,7 @@ test('higher classic tray deals sustain near-full storage pressure and deep matc
   }
 });
 
-test('Bridge and every later Tour tray stage sustain near-full storage pressure and deep match spacing', () => {
+test('Bridge and later Tour stages sustain pressure; 40+ tile stages add visible decoys', () => {
   for (const id of DIORAMA_STAGE_ORDER) {
     const stage = DIORAMA_STAGES[id];
     if (!stage.trayChallenge) continue;
@@ -113,6 +117,12 @@ test('Bridge and every later Tour tray stage sustain near-full storage pressure 
         minimumMatchGap(deal.tiles, tileOrder) >= stage.trayCapacity,
         `${id} seed ${seed} must delay every partner by at least the tray capacity`,
       );
+      if (stage.positions.length >= 40) {
+        assert.ok(
+          countFullTrayDistractorMoments(deal.tiles, tileOrder, stage.trayCapacity) > 0,
+          `${id} seed ${seed} must expose decoy FREE TILEs while a rescue is available`,
+        );
+      }
       const pressure = trayPressure(deal.tiles, tileOrder, stage.trayCapacity);
       assert.equal(pressure.maxTrayLoad, stage.trayCapacity, `${id} seed ${seed} must fill every tray slot`);
       assert.ok(
