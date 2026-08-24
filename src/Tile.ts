@@ -150,6 +150,10 @@ export class Tile {
     this.materials().forEach((material) => {
       const baseColor = material.userData.baseColor as number;
       material.color.setHex(baseColor).multiplyScalar(free ? 1 : 0.58);
+      if (!this.selected) {
+        material.emissive.setHex(this.gateKey ? 0xd4a72c : 0x000000);
+        material.emissiveIntensity = this.gateKey ? 0.18 : 0;
+      }
     });
   }
 
