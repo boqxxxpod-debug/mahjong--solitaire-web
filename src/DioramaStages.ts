@@ -36,6 +36,7 @@ export interface DioramaStage {
   hiddenRatio: number;
   trayCapacity: number;
   trayChallenge: boolean;
+  gateChallenge: boolean;
   camera: { targetZ: number; distanceScale: number };
 }
 
@@ -75,16 +76,16 @@ export const DIORAMA_STAGE_ORDER = [
 ] as const;
 
 export const DIORAMA_STAGES: Readonly<Record<DioramaStageId, DioramaStage>> = {
-  gate: { id: 'gate', label: 'Gate', description: '24 tiles · two open layers.', positions: GATE, hints: null, shuffles: null, hiddenRatio: 0, trayCapacity: 5, trayChallenge: false, camera: { targetZ: 0.8, distanceScale: 1 } },
-  tower: { id: 'tower', label: 'Tower', description: '28 tiles · climb four storeys.', positions: TOWER, hints: 5, shuffles: 4, hiddenRatio: 0.04, trayCapacity: 5, trayChallenge: false, camera: { targetZ: 0.8, distanceScale: 1 } },
-  bridge: { id: 'bridge', label: 'Bridge', description: '32 tiles · clear the raised span.', positions: BRIDGE, hints: 4, shuffles: 3, hiddenRatio: 0.07, trayCapacity: 4, trayChallenge: true, camera: { targetZ: 1, distanceScale: 1 } },
-  turtle: { id: 'turtle', label: 'Turtle', description: '36 tiles · unlock the shell.', positions: TURTLE, hints: 4, shuffles: 3, hiddenRatio: 0.10, trayCapacity: 4, trayChallenge: true, camera: { targetZ: 1, distanceScale: 1 } },
-  pyramid: { id: 'pyramid', label: 'Pyramid', description: '40 tiles · work down the core.', positions: PYRAMID, hints: 3, shuffles: 2, hiddenRatio: 0.13, trayCapacity: 3, trayChallenge: true, camera: { targetZ: 1.2, distanceScale: 1 } },
-  fortress: { id: 'fortress', label: 'Fortress', description: '44 tiles · breach five layers.', positions: FORTRESS, hints: 3, shuffles: 2, hiddenRatio: 0.16, trayCapacity: 3, trayChallenge: true, camera: { targetZ: 1.2, distanceScale: 1 } },
-  pagoda: { id: 'pagoda', label: 'Pagoda', description: '50 tiles · dismantle the eaves.', positions: PAGODA, hints: 2, shuffles: 1, hiddenRatio: 0.18, trayCapacity: 3, trayChallenge: true, camera: { targetZ: 1.4, distanceScale: 1 } },
-  spiral: { id: 'spiral', label: 'Spiral', description: '56 tiles · read the six layers.', positions: SPIRAL, hints: 2, shuffles: 1, hiddenRatio: 0.20, trayCapacity: 3, trayChallenge: true, camera: { targetZ: 1.5, distanceScale: 1 } },
-  dragon: { id: 'dragon', label: 'Dragon', description: '62 tiles · open the raised body.', positions: DRAGON, hints: 1, shuffles: 0, hiddenRatio: 0.23, trayCapacity: 3, trayChallenge: true, camera: { targetZ: 1.5, distanceScale: 1 } },
-  'great-wall': { id: 'great-wall', label: 'Great Wall', description: '68 tiles · no rescue remains.', positions: GREAT_WALL, hints: 0, shuffles: 0, hiddenRatio: 0.25, trayCapacity: 3, trayChallenge: true, camera: { targetZ: 1.5, distanceScale: 1 } },
+  gate: { id: 'gate', label: 'Gate', description: '24 tiles · two open layers.', positions: GATE, hints: null, shuffles: null, hiddenRatio: 0, trayCapacity: 5, trayChallenge: false, gateChallenge: false, camera: { targetZ: 0.8, distanceScale: 1 } },
+  tower: { id: 'tower', label: 'Tower', description: '28 tiles · climb four storeys.', positions: TOWER, hints: 5, shuffles: 4, hiddenRatio: 0.04, trayCapacity: 5, trayChallenge: false, gateChallenge: false, camera: { targetZ: 0.8, distanceScale: 1 } },
+  bridge: { id: 'bridge', label: 'Bridge', description: '32 tiles · clear the raised span.', positions: BRIDGE, hints: 4, shuffles: 3, hiddenRatio: 0.07, trayCapacity: 4, trayChallenge: true, gateChallenge: false, camera: { targetZ: 1, distanceScale: 1 } },
+  turtle: { id: 'turtle', label: 'Turtle', description: '36 tiles · unlock the shell.', positions: TURTLE, hints: 4, shuffles: 3, hiddenRatio: 0.10, trayCapacity: 4, trayChallenge: true, gateChallenge: false, camera: { targetZ: 1, distanceScale: 1 } },
+  pyramid: { id: 'pyramid', label: 'Pyramid', description: '40 tiles · work down the core.', positions: PYRAMID, hints: 3, shuffles: 2, hiddenRatio: 0.13, trayCapacity: 3, trayChallenge: true, gateChallenge: false, camera: { targetZ: 1.2, distanceScale: 1 } },
+  fortress: { id: 'fortress', label: 'Fortress', description: '44 tiles · breach the keyed core.', positions: FORTRESS, hints: 3, shuffles: 2, hiddenRatio: 0.16, trayCapacity: 3, trayChallenge: true, gateChallenge: true, camera: { targetZ: 1.2, distanceScale: 1 } },
+  pagoda: { id: 'pagoda', label: 'Pagoda', description: '50 tiles · unlock then dismantle the eaves.', positions: PAGODA, hints: 2, shuffles: 1, hiddenRatio: 0.18, trayCapacity: 3, trayChallenge: true, gateChallenge: true, camera: { targetZ: 1.4, distanceScale: 1 } },
+  spiral: { id: 'spiral', label: 'Spiral', description: '56 tiles · open the gate before the deep spiral.', positions: SPIRAL, hints: 2, shuffles: 1, hiddenRatio: 0.20, trayCapacity: 3, trayChallenge: true, gateChallenge: true, camera: { targetZ: 1.5, distanceScale: 1 } },
+  dragon: { id: 'dragon', label: 'Dragon', description: '62 tiles · key open the raised body.', positions: DRAGON, hints: 1, shuffles: 0, hiddenRatio: 0.23, trayCapacity: 3, trayChallenge: true, gateChallenge: true, camera: { targetZ: 1.5, distanceScale: 1 } },
+  'great-wall': { id: 'great-wall', label: 'Great Wall', description: '68 tiles · unlock the inner wall with no rescue.', positions: GREAT_WALL, hints: 0, shuffles: 0, hiddenRatio: 0.25, trayCapacity: 3, trayChallenge: true, gateChallenge: true, camera: { targetZ: 1.5, distanceScale: 1 } },
 };
 
 const removalOrders = new Map<DioramaStageId, Array<readonly [number, number]>>();
@@ -121,6 +122,23 @@ function buildTiles(stage: DioramaStage, types: readonly string[], hidden: Reado
   }));
 }
 
+function applyGateMetadata(
+  stage: DioramaStage,
+  order: readonly (readonly [number, number])[],
+  source: readonly TileState[],
+): TileState[] {
+  if (!stage.gateChallenge) return source.map((tile) => ({ ...tile }));
+  const gateId = `${stage.id}:core`;
+  const keys = new Set(order[0]);
+  const gateStart = Math.max(1, Math.floor(order.length * 0.55));
+  const gated = new Set(order.slice(gateStart).flat());
+  return source.map((tile) => ({
+    ...tile,
+    gateKey: keys.has(tile.id) ? gateId : undefined,
+    gateGroup: gated.has(tile.id) ? gateId : undefined,
+  }));
+}
+
 /** Creates a deal whose recorded actions are a complete, canonical-rule replay.
  * Hidden choices contain at most one end of a required pair, so a reveal can
  * always be immediately followed by that pair's removal. */
@@ -133,7 +151,7 @@ export function createDioramaDeal(stageId: DioramaStageId, random: RandomSource 
   order.forEach(([first, second], index) => { types[first] = types[second] = pairFaces[index]; });
 
   const hidden = hiddenForStage(stage, order, random);
-  const tiles = buildTiles(stage, types, hidden);
+  const tiles = applyGateMetadata(stage, order, buildTiles(stage, types, hidden));
   const solution: SolverAction[] = [];
   for (const [firstId, secondId] of order) {
     const hiddenId = hidden.has(firstId) ? firstId : hidden.has(secondId) ? secondId : null;
@@ -152,10 +170,10 @@ export function createDioramaTrayDeal(stageId: DioramaStageId, random: RandomSou
   if (!stage.trayChallenge) return createDioramaDeal(stageId, random);
   const order = removalOrder(stage);
   const types = createSeparatedTrayChallengeTypes(stage.positions, order, stage.trayCapacity, random);
-  const pairOnlyTiles = buildTiles(stage, types, new Set<number>());
+  const pairOnlyTiles = applyGateMetadata(stage, order, buildTiles(stage, types, new Set<number>()));
   if (analyzeBoard(pairOnlyTiles, 100_000).status !== 'UNSOLVABLE') throw new Error(`${stageId} tray deal still has a pair-only solution`);
   const hidden = hiddenForStage(stage, order, random);
-  const tiles = buildTiles(stage, types, hidden);
+  const tiles = applyGateMetadata(stage, order, buildTiles(stage, types, hidden));
   const solution: SolverAction[] = [];
   for (const [firstId, secondId] of order) {
     for (const tileId of [firstId, secondId]) {
