@@ -13,6 +13,7 @@ import { analyzeBoard, applySolverAction, boardStateHash, hasAvailableAction, is
 import type { AvailableAction, PlayRule, SearchResult, SolverAction, TileState } from './GameRules';
 import { createSolvableDeal, createTrayChallengeDeal, DIFFICULTIES, Difficulty } from './BoardLayout';
 import { createDioramaDeal, createDioramaTrayDeal, DIORAMA_STAGES, type DioramaStageId } from './DioramaStages';
+import { hasForcedTrayStorageMoment } from './TrayChallenge';
 import type { TilePosition } from './GameRules';
 
 function layoutBounds(positions: readonly TilePosition[]): THREE.Box3 {
@@ -55,6 +56,11 @@ export class BoardManager {
     const random = () => ((this.seedState = (this.seedState * 1664525 + 1013904223) >>> 0) / 2 ** 32);
     const playRule = this.preferredPlayRule();
     const deal = playRule === 'tray' ? createDioramaTrayDeal(stageId, random) : createDioramaDeal(stageId, random);
+    const stage = DIORAMA_STAGES[stageId];
+    if (playRule === 'tray' && stage.trayChallenge &&
+      !hasForcedTrayStorageMoment(deal.tiles, deal.removalPairs.flat(), stage.trayCapacity)) {
+      throw new Error(`${stageId} tray deal does not force a zero-pair storage moment`);
+    }
     this.dealPlayRule = playRule; this.currentDioramaStageId = stageId;
     this.replaceTiles(deal.tiles);
   }
@@ -62,6 +68,11 @@ export class BoardManager {
   restoreDioramaGeometry(stageId: DioramaStageId): void {
     const playRule = this.preferredPlayRule();
     const deal = playRule === 'tray' ? createDioramaTrayDeal(stageId, () => 0.5) : createDioramaDeal(stageId, () => 0.5);
+    const stage = DIORAMA_STAGES[stageId];
+    if (playRule === 'tray' && stage.trayChallenge &&
+      !hasForcedTrayStorageMoment(deal.tiles, deal.removalPairs.flat(), stage.trayCapacity)) {
+      throw new Error(`${stageId} restored tray deal does not force a zero-pair storage moment`);
+    }
     this.dealPlayRule = playRule; this.currentDioramaStageId = stageId;
     this.replaceTiles(deal.tiles);
   }
@@ -70,7 +81,22 @@ export class BoardManager {
     this.discardHintPlan();
     const random = () => ((this.seedState = (this.seedState * 1664525 + 1013904223) >>> 0) / 2 ** 32);
     const playRule = this.preferredPlayRule();
-    const { layout, faceDown } = playRule === 'tray' ? createTrayChallengeDeal(difficulty, random) : createSolvableDeal(difficulty, random);
+    let deal = playRule === 'tray' ? createTrayChallengeDeal(difficulty, random) : createSolvableDeal(difficulty, random);
+    const config = DIFFICULTIES[difficulty];
+    if (playRule === 'tray' && config.trayChallenge) {
+      let attempts = 1;
+      while (!this.hasForcedClassicTrayMoment(deal, difficulty) && attempts < 12) {
+        deal = createTrayChallengeDeal(difficulty, random);
+        attempts++;
+      }
+      if (!this.hasForcedClassicTrayMoment(deal, difficulty)) {
+        deal = createTrayChallengeDeal(difficulty, () => 0.5);
+      }
+      if (!this.hasForcedClassicTrayMoment(deal, difficulty)) {
+        throw new Error(`${difficulty} tray deal does not force a zero-pair storage moment`);
+      }
+    }
+    const { layout, faceDown } = deal;
     const expectedCount = DIFFICULTY_TILE_COUNTS[difficulty];
     if (layout.length !== expectedCount) throw new Error(`${difficulty} layout contains ${layout.length}/${expectedCount} tiles`);
     const nextTiles = layout.map(({ face, ...position }, index) => new Tile(index, face, position, this.geometry, faceDown[index]));
@@ -248,6 +274,18 @@ export class BoardManager {
     this.tiles.forEach((tile) => { this.scene.remove(tile.mesh); (tile.mesh.material as THREE.Material[]).forEach((material) => material.dispose()); });
     this.tiles = nextTiles; this.initialDeal = states.map((tile) => ({ type: tile.type, faceDown: Boolean(tile.faceDown) }));
     this.tiles.forEach((tile) => this.scene.add(tile.mesh)); this.assertRenderable(states.length); this.refreshFreeTiles();
+  }
+
+  private hasForcedClassicTrayMoment(deal: ReturnType<typeof createTrayChallengeDeal>, difficulty: Difficulty): boolean {
+    const states: TileState[] = deal.layout.map(({ face, ...position }, id) => ({
+      id,
+      type: face,
+      ...position,
+      removed: false,
+      faceDown: Boolean(deal.faceDown[id]),
+      originallyFaceDown: Boolean(deal.faceDown[id]),
+    }));
+    return hasForcedTrayStorageMoment(states, deal.solution.flat(), DIFFICULTIES[difficulty].trayCapacity);
   }
 
   private clearHintPlan(): void {
