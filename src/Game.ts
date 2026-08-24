@@ -56,7 +56,9 @@ export class Game {
   private fitCamera(viewportHeight: number): void {
     const bounds = this.board.getCameraBounds();
     const center = bounds.getCenter(new THREE.Vector3());
-    const direction = new THREE.Vector3(0, 0.72, 0.69).normalize();
+    // Keep edge-to-edge rows in world space, but view them from higher above so
+    // the front row no longer hides most of the artwork on the row behind it.
+    const direction = new THREE.Vector3(0, 0.84, 0.54).normalize();
     this.camera.position.copy(center).add(direction);
     this.camera.lookAt(center);
     this.camera.updateMatrixWorld();
