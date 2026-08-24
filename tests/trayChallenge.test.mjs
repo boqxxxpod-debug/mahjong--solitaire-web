@@ -49,7 +49,20 @@ function trayPressure(initial, tileOrder, capacity) {
   return { maxTrayLoad, fullTrayMoves, zeroPairStorageMoves };
 }
 
-test('higher classic tray deals sustain near-full storage pressure', () => {
+function minimumMatchGap(initial, tileOrder) {
+  const firstSeen = new Map();
+  let minimum = Number.POSITIVE_INFINITY;
+  tileOrder.forEach((tileId, index) => {
+    const tile = initial.find((candidate) => candidate.id === tileId);
+    assert.ok(tile, `missing tile ${tileId}`);
+    const first = firstSeen.get(tile.type);
+    if (first === undefined) firstSeen.set(tile.type, index);
+    else minimum = Math.min(minimum, index - first);
+  });
+  return minimum;
+}
+
+test('higher classic tray deals sustain near-full storage pressure and deep match spacing', () => {
   for (const difficulty of ['normal', 'hard']) {
     const config = DIFFICULTIES[difficulty];
     assert.equal(config.trayChallenge, true);
@@ -62,6 +75,10 @@ test('higher classic tray deals sustain near-full storage pressure', () => {
         true,
         `${difficulty} seed ${seed} must reach a zero-pair board while unmatched tiles are stored`,
       );
+      assert.ok(
+        minimumMatchGap(states, tileOrder) >= config.trayCapacity,
+        `${difficulty} seed ${seed} must delay every partner by at least the tray capacity`,
+      );
       const pressure = trayPressure(states, tileOrder, config.trayCapacity);
       assert.equal(pressure.maxTrayLoad, config.trayCapacity, `${difficulty} seed ${seed} must fill every tray slot`);
       assert.ok(
@@ -73,7 +90,7 @@ test('higher classic tray deals sustain near-full storage pressure', () => {
   }
 });
 
-test('Bridge and every later Tour tray stage sustain near-full storage pressure', () => {
+test('Bridge and every later Tour tray stage sustain near-full storage pressure and deep match spacing', () => {
   for (const id of DIORAMA_STAGE_ORDER) {
     const stage = DIORAMA_STAGES[id];
     if (!stage.trayChallenge) continue;
@@ -84,6 +101,10 @@ test('Bridge and every later Tour tray stage sustain near-full storage pressure'
         hasForcedTrayStorageMoment(deal.tiles, tileOrder, stage.trayCapacity),
         true,
         `${id} seed ${seed} must reach a zero-pair board while unmatched tiles are stored`,
+      );
+      assert.ok(
+        minimumMatchGap(deal.tiles, tileOrder) >= stage.trayCapacity,
+        `${id} seed ${seed} must delay every partner by at least the tray capacity`,
       );
       const pressure = trayPressure(deal.tiles, tileOrder, stage.trayCapacity);
       assert.equal(pressure.maxTrayLoad, stage.trayCapacity, `${id} seed ${seed} must fill every tray slot`);
