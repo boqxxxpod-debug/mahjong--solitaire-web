@@ -7,6 +7,8 @@ export interface TileState {
   removed: boolean;
   faceDown?: boolean;
   originallyFaceDown?: boolean;
+  gateKey?: string;
+  gateGroup?: string;
 }
 
 export interface TilePosition { x: number; y: number; z: number; }
@@ -44,8 +46,12 @@ export interface CertifiedShuffleResult {
   rejectedUnknown: number;
 }
 
+export function isGateLocked(tile: TileState, tiles: readonly TileState[]): boolean {
+  return Boolean(tile.gateGroup && tiles.some((candidate) => !candidate.removed && candidate.gateKey === tile.gateGroup));
+}
+
 export function isFreeTile(tile: TileState, tiles: readonly TileState[]): boolean {
-  if (tile.removed) return false;
+  if (tile.removed || isGateLocked(tile, tiles)) return false;
   const active = tiles.filter((other) => !other.removed && other.id !== tile.id);
   if (!isTileUncovered(tile, tiles)) return false;
 
@@ -95,6 +101,8 @@ export function boardStateHash(tiles: readonly TileState[]): string {
       tile.removed ? 1 : 0,
       tile.removed ? '-' : tile.faceDown ? 1 : 0,
       tile.originallyFaceDown ? 1 : 0,
+      tile.gateKey ?? '-',
+      tile.gateGroup ?? '-',
     ].join(':'))
     .join('|');
 }
