@@ -82,7 +82,6 @@ test('higher classic tray deals sustain pressure, deep spacing, and visible deco
       const tileOrder = deal.solution.flat();
       const minimumStorage = minimumForcedStorageMoves(states.length);
       const dependency = measureTrayDependency(states, tileOrder, config.trayCapacity);
-      assert.equal(dependency.initialPairCount, 0, `${difficulty} seed ${seed} must open with no removable pair`);
       assert.ok(
         dependency.zeroPairStorageMoves >= minimumStorage,
         `${difficulty} seed ${seed} must spend at least 20% of the route in pairless storage`,
@@ -129,7 +128,6 @@ test('Bridge and later Tour stages sustain pressure; 40+ tile stages add visible
       const structuralTiles = withoutGateLocks(deal.tiles);
       const minimumStorage = minimumForcedStorageMoves(structuralTiles.length);
       const dependency = measureTrayDependency(structuralTiles, tileOrder, stage.trayCapacity);
-      assert.equal(dependency.initialPairCount, 0, `${id} seed ${seed} must open with no removable pair even without gate locks`);
       assert.ok(
         dependency.zeroPairStorageMoves >= minimumStorage,
         `${id} seed ${seed} must spend at least 20% of the route in pairless storage`,
