@@ -1,6 +1,6 @@
 import { analyzeBoard, findSolvableRemovalOrder, generateSolvableTypes, RandomSource, TilePosition, type TileState } from './GameRules.js';
 import { MAHJONG_FACES } from './TileCatalog.js';
-import { countFullTrayDistractorMoments } from './TrayChallenge.js';
+import { countFullTrayDistractorMoments, hasSustainedForcedTrayStorage } from './TrayChallenge.js';
 
 export type Difficulty = 'easy' | 'normal' | 'hard';
 export interface TileLayout extends TilePosition { face: string; }
@@ -207,6 +207,24 @@ function pairOnlyStatus(positions: readonly TilePosition[], faces: readonly stri
   return analyzeBoard(statesForFaces(positions, faces), 100_000).status === 'UNSOLVABLE' ? 'UNSOLVABLE' : 'OTHER';
 }
 
+function minimumForcedStorageMoves(tileCount: number): number {
+  return Math.max(3, Math.ceil(tileCount * 0.2));
+}
+
+function hasRequiredTrayDependency(
+  positions: readonly TilePosition[],
+  faces: readonly string[],
+  removalPairs: readonly (readonly [number, number])[],
+  capacity: number,
+): boolean {
+  return hasSustainedForcedTrayStorage(
+    statesForFaces(positions, faces),
+    removalPairs.flat(),
+    capacity,
+    minimumForcedStorageMoves(positions.length),
+  );
+}
+
 function hasRequiredTrayDistractor(
   positions: readonly TilePosition[],
   faces: readonly string[],
@@ -224,11 +242,11 @@ function deterministicTrayRandom(seed: number): RandomSource {
 
 /**
  * Produces a rolling-pressure tray assignment that also has no complete
- * pair-only solution. On boards of 40+ tiles it additionally requires a
- * full-tray moment where multiple visible FREE TILEs are decoys and only a
- * held-face match can be accepted safely. Random candidates preserve variety;
- * deterministic fallbacks guarantee that an unlucky seed never prevents a
- * board from loading.
+ * pair-only solution. Every accepted board starts with zero removable pairs
+ * and spends at least 20% of its certified route in a genuine storage-only
+ * state. On boards of 40+ tiles it additionally requires a full-tray moment
+ * with visible decoys. Random candidates preserve variety; deterministic
+ * fallbacks guarantee that an unlucky seed never prevents a board from loading.
  */
 export function createSeparatedTrayChallengeTypes(
   positions: readonly TilePosition[],
@@ -236,19 +254,23 @@ export function createSeparatedTrayChallengeTypes(
   capacity: number,
   random: RandomSource = Math.random,
 ): string[] {
-  for (let attempt = 0; attempt < 12; attempt++) {
+  for (let attempt = 0; attempt < 24; attempt++) {
     const candidate = createTrayChallengeTypes(removalPairs, capacity, random);
-    if (pairOnlyStatus(positions, candidate) === 'UNSOLVABLE' && hasRequiredTrayDistractor(positions, candidate, removalPairs, capacity)) return candidate;
+    if (hasRequiredTrayDependency(positions, candidate, removalPairs, capacity) &&
+      pairOnlyStatus(positions, candidate) === 'UNSOLVABLE' &&
+      hasRequiredTrayDistractor(positions, candidate, removalPairs, capacity)) return candidate;
   }
-  for (let seed = 1; seed <= 64; seed++) {
+  for (let seed = 1; seed <= 128; seed++) {
     const candidate = createTrayChallengeTypes(removalPairs, capacity, deterministicTrayRandom(Math.imul(seed, 0x9e3779b1)));
-    if (pairOnlyStatus(positions, candidate) === 'UNSOLVABLE' && hasRequiredTrayDistractor(positions, candidate, removalPairs, capacity)) return candidate;
+    if (hasRequiredTrayDependency(positions, candidate, removalPairs, capacity) &&
+      pairOnlyStatus(positions, candidate) === 'UNSOLVABLE' &&
+      hasRequiredTrayDistractor(positions, candidate, removalPairs, capacity)) return candidate;
   }
-  throw new Error('Could not create a separated tray challenge');
+  throw new Error('Could not create a strongly tray-dependent challenge');
 }
 
 /** A tray-only deal: matching faces are spread deep into the legal route and
- * every accepted layout is rejected if pair-only play can still clear it. */
+ * every accepted layout is rejected if it can avoid sustained tray storage. */
 export function createTrayChallengeDeal(difficulty: Difficulty = 'normal', random: RandomSource = Math.random): TrayChallengeDeal {
   const config = DIFFICULTIES[difficulty];
   if (!config.trayChallenge) return createSolvableDeal(difficulty, random);
@@ -260,6 +282,7 @@ export function createTrayChallengeDeal(difficulty: Difficulty = 'normal', rando
     order = difficulty === 'hard' ? HARD_REMOVAL_ORDER : findSolvableRemovalOrder(positions, () => 0.5);
   }
   const faces = createSeparatedTrayChallengeTypes(positions, order, config.trayCapacity, random);
+  if (!hasRequiredTrayDependency(positions, faces, order, config.trayCapacity)) throw new Error(`${difficulty} tray deal lacks sustained forced storage`);
   if (pairOnlyStatus(positions, faces) !== 'UNSOLVABLE') throw new Error(`${difficulty} tray deal still has a pair-only solution`);
   if (!hasRequiredTrayDistractor(positions, faces, order, config.trayCapacity)) throw new Error(`${difficulty} tray deal lacks a distractor moment`);
 
