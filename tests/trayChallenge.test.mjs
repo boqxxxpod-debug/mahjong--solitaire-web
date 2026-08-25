@@ -3,12 +3,15 @@ import assert from 'node:assert/strict';
 import { DIFFICULTIES, createTrayChallengeDeal } from '../.test-dist/BoardLayout.js';
 import { DIORAMA_STAGE_ORDER, DIORAMA_STAGES, createDioramaTrayDeal } from '../.test-dist/DioramaStages.js';
 import { getAvailablePairs, isTrayClear, moveTileToTray } from '../.test-dist/GameRules.js';
-import { countFullTrayDistractorMoments, hasForcedTrayStorageMoment } from '../.test-dist/TrayChallenge.js';
+import { countFullTrayDistractorMoments, hasForcedTrayStorageMoment, hasSustainedForcedTrayStorage, measureTrayDependency } from '../.test-dist/TrayChallenge.js';
 
 const seeded = (seed) => {
   let state = seed >>> 0;
   return () => (state = (state * 1664525 + 1013904223) >>> 0) / 2 ** 32;
 };
+
+const minimumForcedStorageMoves = (tileCount) => Math.max(3, Math.ceil(tileCount * 0.2));
+const withoutGateLocks = (tiles) => tiles.map((tile) => ({ ...tile, gateKey: undefined, gateGroup: undefined }));
 
 function classicStates(deal) {
   return deal.layout.map(({ face, ...position }, id) => ({
@@ -77,6 +80,18 @@ test('higher classic tray deals sustain pressure, deep spacing, and visible deco
       const deal = createTrayChallengeDeal(difficulty, seeded(seed * 97));
       const states = classicStates(deal);
       const tileOrder = deal.solution.flat();
+      const minimumStorage = minimumForcedStorageMoves(states.length);
+      const dependency = measureTrayDependency(states, tileOrder, config.trayCapacity);
+      assert.equal(dependency.initialPairCount, 0, `${difficulty} seed ${seed} must open with no removable pair`);
+      assert.ok(
+        dependency.zeroPairStorageMoves >= minimumStorage,
+        `${difficulty} seed ${seed} must spend at least 20% of the route in pairless storage`,
+      );
+      assert.equal(
+        hasSustainedForcedTrayStorage(states, tileOrder, config.trayCapacity, minimumStorage),
+        true,
+        `${difficulty} seed ${seed} must force sustained tray storage`,
+      );
       assert.equal(
         hasForcedTrayStorageMoment(states, tileOrder, config.trayCapacity),
         true,
@@ -96,7 +111,10 @@ test('higher classic tray deals sustain pressure, deep spacing, and visible deco
         pressure.fullTrayMoves >= Math.floor(tileOrder.length / 3),
         `${difficulty} seed ${seed} must keep the tray full across a sustained section`,
       );
-      assert.ok(pressure.zeroPairStorageMoves > 0, `${difficulty} seed ${seed} must require storage with no board pair available`);
+      assert.ok(
+        pressure.zeroPairStorageMoves >= minimumStorage,
+        `${difficulty} seed ${seed} must repeatedly require storage with no board pair available`,
+      );
     }
   }
 });
@@ -108,6 +126,19 @@ test('Bridge and later Tour stages sustain pressure; 40+ tile stages add visible
     for (let seed = 1; seed <= 4; seed++) {
       const deal = createDioramaTrayDeal(id, seeded(1000 + seed));
       const tileOrder = deal.removalPairs.flat();
+      const structuralTiles = withoutGateLocks(deal.tiles);
+      const minimumStorage = minimumForcedStorageMoves(structuralTiles.length);
+      const dependency = measureTrayDependency(structuralTiles, tileOrder, stage.trayCapacity);
+      assert.equal(dependency.initialPairCount, 0, `${id} seed ${seed} must open with no removable pair even without gate locks`);
+      assert.ok(
+        dependency.zeroPairStorageMoves >= minimumStorage,
+        `${id} seed ${seed} must spend at least 20% of the route in pairless storage`,
+      );
+      assert.equal(
+        hasSustainedForcedTrayStorage(structuralTiles, tileOrder, stage.trayCapacity, minimumStorage),
+        true,
+        `${id} seed ${seed} must force sustained tray storage without relying on gates`,
+      );
       assert.equal(
         hasForcedTrayStorageMoment(deal.tiles, tileOrder, stage.trayCapacity),
         true,
@@ -129,7 +160,10 @@ test('Bridge and later Tour stages sustain pressure; 40+ tile stages add visible
         pressure.fullTrayMoves >= Math.floor(tileOrder.length / 3),
         `${id} seed ${seed} must keep the tray full across a sustained section`,
       );
-      assert.ok(pressure.zeroPairStorageMoves > 0, `${id} seed ${seed} must require storage with no board pair available`);
+      assert.ok(
+        pressure.zeroPairStorageMoves >= minimumStorage,
+        `${id} seed ${seed} must repeatedly require storage with no board pair available`,
+      );
     }
   }
 });
