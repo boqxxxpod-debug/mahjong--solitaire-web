@@ -27,11 +27,12 @@ test('catalog has ten stable stages with a strictly increasing difficulty curve'
     'fortress', 'pagoda', 'spiral', 'dragon', 'great-wall',
   ]);
   assert.deepEqual(DIORAMA_STAGE_ORDER.map((id) => DIORAMA_STAGES[id].positions.length), [24, 28, 32, 36, 40, 44, 50, 56, 62, 68]);
+  assert.deepEqual(DIORAMA_STAGE_ORDER.map((id) => DIORAMA_STAGES[id].hiddenRatio), [0, 0.04, 0.07, 0.10, 0.13, 0.17, 0.20, 0.24, 0.28, 0.32]);
   const normalized = new Map();
   for (const [index, id] of DIORAMA_STAGE_ORDER.entries()) {
     const stage = DIORAMA_STAGES[id], { positions } = stage;
     assert.ok(positions.length > 0 && positions.length <= 68 && positions.length % 2 === 0, `${id} has a valid even count`);
-    assert.ok(stage.hiddenRatio >= 0 && stage.hiddenRatio <= 0.25);
+    assert.ok(stage.hiddenRatio >= 0 && stage.hiddenRatio <= 0.32);
     assert.equal(stage.trayChallenge, index >= 2, `${id} tray challenge threshold`);
     assert.equal(stage.gateChallenge, index >= 5, `${id} gate challenge threshold`);
     if (index) {
