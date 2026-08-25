@@ -49,9 +49,10 @@ export function measureTrayDependency(
 }
 
 /**
- * Strong tray challenge gate: there must be no immediately removable pair at
- * the opening, and a substantial part of the certified route must keep an
- * unmatched tile stored while the board exposes no same-face FREE pair.
+ * Strong tray challenge gate: a substantial part of the certified route must
+ * keep an unmatched tile stored while the board exposes no same-face FREE pair.
+ * Opening control is deliberately handled separately because some geometries
+ * cannot structurally expose zero pairs before any tile is removed.
  */
 export function hasSustainedForcedTrayStorage(
   initial: readonly TileState[],
@@ -60,7 +61,7 @@ export function hasSustainedForcedTrayStorage(
   minimumZeroPairStorageMoves: number,
 ): boolean {
   const metrics = measureTrayDependency(initial, tileOrder, capacity);
-  return metrics.clears && metrics.initialPairCount === 0 && metrics.zeroPairStorageMoves >= minimumZeroPairStorageMoves;
+  return metrics.clears && metrics.zeroPairStorageMoves >= minimumZeroPairStorageMoves;
 }
 
 /**
