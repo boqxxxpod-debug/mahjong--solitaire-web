@@ -1,5 +1,68 @@
 import { getAvailablePairs, isFreeTile, isTrayClear, moveTileToTray, type TileState } from './GameRules.js';
 
+export interface TrayDependencyMetrics {
+  initialPairCount: number;
+  zeroPairStorageMoves: number;
+  longestZeroPairStorageRun: number;
+  clears: boolean;
+}
+
+/**
+ * Measures tray dependence along a certified route with every tile face-up.
+ * This deliberately ignores hidden information so a board only earns credit
+ * for geometry + face assignment that genuinely forces temporary storage.
+ */
+export function measureTrayDependency(
+  initial: readonly TileState[],
+  tileOrder: readonly number[],
+  capacity: number,
+): TrayDependencyMetrics {
+  const state = initial.map((tile) => ({
+    ...tile,
+    faceDown: false,
+    originallyFaceDown: false,
+  }));
+  let tray: TileState[] = [];
+  const initialPairCount = getAvailablePairs(state).length;
+  let zeroPairStorageMoves = 0;
+  let currentZeroPairStorageRun = 0;
+  let longestZeroPairStorageRun = 0;
+
+  for (const tileId of tileOrder) {
+    const forcedStorage = tray.length > 0 && state.some((tile) => !tile.removed) && getAvailablePairs(state).length === 0;
+    if (forcedStorage) {
+      zeroPairStorageMoves++;
+      currentZeroPairStorageRun++;
+      longestZeroPairStorageRun = Math.max(longestZeroPairStorageRun, currentZeroPairStorageRun);
+    } else {
+      currentZeroPairStorageRun = 0;
+    }
+
+    const tile = state.find((candidate) => candidate.id === tileId);
+    if (!tile) return { initialPairCount, zeroPairStorageMoves, longestZeroPairStorageRun, clears: false };
+    const nextTray = moveTileToTray(tile, state, tray, capacity);
+    if (!nextTray) return { initialPairCount, zeroPairStorageMoves, longestZeroPairStorageRun, clears: false };
+    tray = nextTray;
+  }
+
+  return { initialPairCount, zeroPairStorageMoves, longestZeroPairStorageRun, clears: isTrayClear(state, tray) };
+}
+
+/**
+ * Strong tray challenge gate: there must be no immediately removable pair at
+ * the opening, and a substantial part of the certified route must keep an
+ * unmatched tile stored while the board exposes no same-face FREE pair.
+ */
+export function hasSustainedForcedTrayStorage(
+  initial: readonly TileState[],
+  tileOrder: readonly number[],
+  capacity: number,
+  minimumZeroPairStorageMoves: number,
+): boolean {
+  const metrics = measureTrayDependency(initial, tileOrder, capacity);
+  return metrics.clears && metrics.initialPairCount === 0 && metrics.zeroPairStorageMoves >= minimumZeroPairStorageMoves;
+}
+
 /**
  * Verifies that a certified tray route contains a genuine storage-only moment:
  * at least one unmatched tile is already held in the tray while the remaining
@@ -15,27 +78,8 @@ export function hasForcedTrayStorageMoment(
   tileOrder: readonly number[],
   capacity: number,
 ): boolean {
-  const state = initial.map((tile) => ({
-    ...tile,
-    faceDown: false,
-    originallyFaceDown: false,
-  }));
-  let tray: TileState[] = [];
-  let foundForcedMoment = false;
-
-  for (const tileId of tileOrder) {
-    if (tray.length > 0 && state.some((tile) => !tile.removed) && getAvailablePairs(state).length === 0) {
-      foundForcedMoment = true;
-    }
-
-    const tile = state.find((candidate) => candidate.id === tileId);
-    if (!tile) return false;
-    const nextTray = moveTileToTray(tile, state, tray, capacity);
-    if (!nextTray) return false;
-    tray = nextTray;
-  }
-
-  return foundForcedMoment && isTrayClear(state, tray);
+  const metrics = measureTrayDependency(initial, tileOrder, capacity);
+  return metrics.clears && metrics.zeroPairStorageMoves > 0;
 }
 
 /**
