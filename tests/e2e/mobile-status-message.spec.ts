@@ -10,6 +10,10 @@ for (const viewport of viewports) {
   test(`blocked-tile message stays clear of controls at ${viewport.width}x${viewport.height}`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await page.goto(`/?seed=status-message-${viewport.width}x${viewport.height}`);
+    await expect.poll(() => page.evaluate(() => {
+      const game = (window as Window & { __mahjongGameTest?: any }).__mahjongGameTest;
+      return Boolean(game) && game.matches.worker === undefined;
+    })).toBe(true);
 
     await page.evaluate(() => {
       const game = (window as Window & { __mahjongGameTest?: any }).__mahjongGameTest;
