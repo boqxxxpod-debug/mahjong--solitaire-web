@@ -21,7 +21,7 @@ h1 { font-family: "Noto Serif JP", serif; font-size: clamp(20px, 6vw, 30px); let
 h1 span { display: block; font: 700 8px Inter, sans-serif; letter-spacing: .28em; color: #93ada8; margin-top: 3px; }
 .counter { min-width: 58px; border: 1px solid #ffffff2d; border-radius: 999px; padding: 7px 9px; background: #06202a99; backdrop-filter: blur(8px); text-align: center; }
 .counter b { color: #f5d889; font-size: 15px; }.counter small { color: #8ba8a5; font-size: 8px; letter-spacing: .15em; }
-#message { position: absolute; z-index: 2; left: 50%; top: calc(max(18px, env(safe-area-inset-top)) + 76px); transform: translateX(-50%); white-space: nowrap; color: #a9c2bd; font-size: 11px; letter-spacing: .08em; pointer-events: none; transition: color .2s; }
+#message { position: absolute; z-index: 2; left: 50%; top: 76px; transform: translateX(-50%); white-space: nowrap; color: #a9c2bd; font-size: 11px; letter-spacing: .08em; pointer-events: none; transition: color .2s; }
 #message.error { color: #ffb7a6; }
 .clear { position: absolute; z-index: 3; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; pointer-events: none; opacity: 0; transform: scale(.94); transition: opacity .5s, transform .5s; background: radial-gradient(circle, #0e3c3df2, #071a2480 52%, transparent 78%); }
 .clear.show { opacity: 1; transform: scale(1); pointer-events: auto; }.clear span { max-width: 95vw; color: #f4d784; font-size: clamp(32px, 10vw, 90px); font-weight: 800; line-height: 1.08; letter-spacing: .08em; text-align: center; text-shadow: 0 8px 35px #000; }.clear small { max-width: 340px; margin-top: 12px; line-height: 1.65; letter-spacing: .12em; color: #d4e4df; text-align: center; }
@@ -53,7 +53,10 @@ button:disabled { opacity: .4; cursor: not-allowed; transform: none; }
 .mode-choice small, .stage-button small { color: #93ada8; font-weight: 500; letter-spacing: .04em; }.stage-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }.stage-button[aria-pressed="true"] { border-color: #f5d889; }.stage-button .stage-state { color: #58d9b5; }
 footer { position: absolute; z-index: 2; bottom: max(14px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); width: max-content; max-width: 90%; font-size: 8px; letter-spacing: .1em; color: #789591; text-align: center; pointer-events: none; }
 footer i { display: inline-block; width: 3px; height: 3px; border-radius: 50%; margin: 0 7px 2px; background: #42c59f; }
-@media (min-width: 700px) { #message { top: 32px; } .hud { max-width: 900px; left: 50%; width: calc(100% - 48px); transform: translateX(-50%); } }
+@media (min-width: 700px) { #message { top: 14px; } .hud { max-width: 900px; left: 50%; width: calc(100% - 48px); transform: translateX(-50%); } }
+@media (max-width: 699px) {
+  #message { position: static; align-self: center; width: min(220px, calc(100vw - 130px)); max-width: none; margin-top: 1px; padding: 5px 9px; overflow: visible; transform: none; border: 1px solid #ffffff21; border-radius: 999px; background: #06202acc; backdrop-filter: blur(8px); white-space: normal; line-height: 1.4; text-align: center; text-overflow: clip; }
+}
 @media (max-width: 430px) {
   .hud { left: max(12px, env(safe-area-inset-left)); right: max(12px, env(safe-area-inset-right)); align-items: flex-start; }
   .eyebrow { font-size: 7px; letter-spacing: .2em; }
@@ -62,9 +65,8 @@ footer i { display: inline-block; width: 3px; height: 3px; border-radius: 50%; m
   .difficulty-counter { display: none; }
   .counter b { font-size: 12px; }
   button { min-height: 38px; padding-inline: 9px; font-size: 8px; }
-  #message { top: calc(max(18px, env(safe-area-inset-top)) + 92px); max-width: 92%; overflow: hidden; text-overflow: ellipsis; }
   .result-actions { max-width: 340px; flex-wrap: wrap; justify-content: center; }.restart-result { margin-top: 10px; }
 }
 @media (max-width: 370px) { .counter { min-width: 47px; } .stats, .buttons { gap: 3px; } button { padding-inline: 7px; } }
-@media (max-height: 500px) { footer { display: none; } .hud { top: max(8px, env(safe-area-inset-top)); } .difficulty-picker { display: none; } #message { top: 58px; } }
+@media (max-height: 500px) { footer { display: none; } .hud { top: max(8px, env(safe-area-inset-top)); } .difficulty-picker { display: none; } #message { top: 50px; } }
 @media (max-height: 500px) { .tray { left: auto; right: max(8px, env(safe-area-inset-right)); bottom: 8px; transform: none; width: min(300px, 45vw); } }
