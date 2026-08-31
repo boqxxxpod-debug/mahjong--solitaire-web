@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyzeBoard, analyzeTrayBoard, boardStateHash, getAvailableActions, isFreeTile, isGateLocked } from '../.test-dist/GameRules.js';
+import { analyzeBoard, analyzeTrayBoard, boardStateHash, getAvailableActions, isFreeTile, isGateLocked, isTileUncovered, removePair } from '../.test-dist/GameRules.js';
 import { DIFFICULTIES, createTrayChallengeDeal } from '../.test-dist/BoardLayout.js';
 import { DIORAMA_STAGE_ORDER, DIORAMA_STAGES, createDioramaDeal, createDioramaTrayDeal, replayDioramaCertificate, replayDioramaTrayCertificate } from '../.test-dist/DioramaStages.js';
 
@@ -79,6 +79,46 @@ test('seeded deals reproduce, vary, expose an action, and replay through CLEAR',
     assert.ok(hashes.size >= 20, `${id} meaningfully varies across seeds`);
     const geometry = DIORAMA_STAGES[id].positions.map((position, tileId) => ({ id: tileId, type: '', ...position, removed: false }));
     assert.ok(geometry.filter((tile) => isFreeTile(tile, geometry)).length >= 2);
+  }
+});
+
+test('late pair-mode stages expose a visible four-of-a-kind fork with a proven losing cross-pair', () => {
+  const challengedStages = ['pyramid', 'fortress', 'pagoda', 'spiral'];
+  for (const [index, id] of challengedStages.entries()) {
+    const stage = DIORAMA_STAGES[id];
+    const deal = createDioramaDeal(id, seeded(9000 + index));
+    const { primaryPairIndex, secondaryPairIndex } = stage.pairChoice;
+    const primary = deal.removalPairs[primaryPairIndex];
+    const secondary = deal.removalPairs[secondaryPairIndex];
+    const challengeIds = [...primary, ...secondary];
+    const repeatedFace = deal.tiles[primary[0]].type;
+
+    assert.equal(deal.tiles.filter((tile) => tile.type === repeatedFace).length, 4, `${id} repeats the challenge face exactly four times`);
+    assert.ok(challengeIds.every((tileId) => deal.tiles[tileId].type === repeatedFace), `${id} assigns one face to both certified pairs`);
+    assert.ok(challengeIds.every((tileId) => !deal.tiles[tileId].faceDown && !deal.tiles[tileId].originallyFaceDown), `${id} keeps all four choices visible`);
+    assert.equal(replayDioramaCertificate(deal.tiles, deal.solution), true, `${id} retains its certified winning route`);
+
+    const checkpoint = deal.tiles.map((tile) => ({ ...tile }));
+    for (let pairIndex = 0; pairIndex < primaryPairIndex; pairIndex++) {
+      const [firstId, secondId] = deal.removalPairs[pairIndex];
+      checkpoint[firstId].faceDown = false;
+      checkpoint[secondId].faceDown = false;
+      assert.equal(removePair(checkpoint[firstId], checkpoint[secondId], checkpoint), true, `${id} reaches its pair-choice checkpoint`);
+    }
+
+    assert.ok(challengeIds.every((tileId) => isTileUncovered(checkpoint[tileId], checkpoint)), `${id} exposes all four challenge tiles`);
+    const freeChallengeIds = challengeIds.filter((tileId) => isFreeTile(checkpoint[tileId], checkpoint));
+    assert.equal(freeChallengeIds.length, 3, `${id} presents three removable copies at the checkpoint`);
+    assert.ok(primary.every((tileId) => freeChallengeIds.includes(tileId)), `${id} keeps the certified pair removable`);
+
+    const secondaryFreeId = secondary.find((tileId) => freeChallengeIds.includes(tileId));
+    assert.notEqual(secondaryFreeId, undefined, `${id} exposes one tile from the second certified pair`);
+    const losingCrossPairs = primary.filter((primaryId) => {
+      const wrongRoute = checkpoint.map((tile) => ({ ...tile }));
+      if (!removePair(wrongRoute[primaryId], wrongRoute[secondaryFreeId], wrongRoute)) return false;
+      return analyzeBoard(wrongRoute, 1_000_000).status === 'UNSOLVABLE';
+    });
+    assert.ok(losingCrossPairs.length >= 1, `${id} proves at least one tempting cross-pair loses`);
   }
 });
 

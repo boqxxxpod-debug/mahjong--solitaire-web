@@ -413,7 +413,7 @@ export class MatchManager {
     try {
       const game = loaded.game;
       this.playRule = game.playRule; this.tray = game.tray.map((tile) => ({ ...tile }));
-      if (game.mode === 'tour') { this.mode = 'tour'; this.stageId = game.stageId; this.unlocked = new Set(game.unlockedStages); this.completed = new Set(game.completedStages); this.board.restoreDioramaGeometry(game.stageId); }
+      if (game.mode === 'tour') { this.mode = 'tour'; this.stageId = game.stageId; this.unlocked = new Set(game.unlockedStages); this.completed = new Set(game.completedStages); this.board.restoreDioramaGeometry(game.stageId, game.initialTiles); }
       else { this.mode = 'classic'; this.stageId = undefined; this.board.newDeal(game.difficulty); }
       if (this.tray.length > this.currentTrayCapacity()) throw new Error('Saved tray exceeds this level capacity');
       this.board.restoreInitialDeal(game.initialTiles); this.board.restore(game.tiles);
