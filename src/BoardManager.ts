@@ -67,10 +67,23 @@ export class BoardManager {
     this.replaceTiles(deal.tiles);
   }
 
-  restoreDioramaGeometry(stageId: DioramaStageId): void {
+  restoreDioramaGeometry(stageId: DioramaStageId, savedInitial?: readonly TileState[]): void {
     const playRule = this.preferredPlayRule();
-    const deal = playRule === 'tray' ? createDioramaTrayDeal(stageId, () => 0.5) : createDioramaDeal(stageId, () => 0.5);
     const stage = DIORAMA_STAGES[stageId];
+    if (savedInitial) {
+      if (savedInitial.length !== stage.positions.length || savedInitial.some((tile, index) =>
+        tile.id !== index || tile.removed || Boolean(tile.faceDown) !== Boolean(tile.originallyFaceDown) ||
+        tile.x !== stage.positions[index].x || tile.y !== stage.positions[index].y || tile.z !== stage.positions[index].z)) {
+        throw new Error(`${stageId} saved initial deal does not match its geometry`);
+      }
+      // Reuse the persisted deal instead of regenerating its face multiset.
+      // This keeps in-progress Tour games compatible when a later release
+      // changes deterministic face assignment or challenge metadata.
+      this.dealPlayRule = playRule; this.currentDioramaStageId = stageId;
+      this.replaceTiles(savedInitial);
+      return;
+    }
+    const deal = playRule === 'tray' ? createDioramaTrayDeal(stageId, () => 0.5) : createDioramaDeal(stageId, () => 0.5);
     if (playRule === 'tray' && stage.trayChallenge &&
       !hasForcedTrayStorageMoment(deal.tiles, deal.removalPairs.flat(), stage.trayCapacity)) {
       throw new Error(`${stageId} restored tray deal does not force a zero-pair storage moment`);
