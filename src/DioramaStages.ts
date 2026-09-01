@@ -37,6 +37,7 @@ export interface DioramaStage {
   trayCapacity: number;
   trayChallenge: boolean;
   gateChallenge: boolean;
+  gateDepth?: number;
   pairChoice?: { primaryPairIndex: number; secondaryPairIndex: number };
   camera: { targetZ: number; distanceScale: number };
 }
@@ -82,11 +83,11 @@ export const DIORAMA_STAGES: Readonly<Record<DioramaStageId, DioramaStage>> = {
   bridge: { id: 'bridge', label: 'Bridge', description: '32 tiles · clear the raised span.', positions: BRIDGE, hints: 4, shuffles: 3, hiddenRatio: 0.07, trayCapacity: 4, trayChallenge: true, gateChallenge: false, camera: { targetZ: 1, distanceScale: 1 } },
   turtle: { id: 'turtle', label: 'Turtle', description: '36 tiles · unlock the shell.', positions: TURTLE, hints: 4, shuffles: 3, hiddenRatio: 0.10, trayCapacity: 4, trayChallenge: true, gateChallenge: false, camera: { targetZ: 1, distanceScale: 1 } },
   pyramid: { id: 'pyramid', label: 'Pyramid', description: '40 tiles · choose the right pair through the core.', positions: PYRAMID, hints: 3, shuffles: 2, hiddenRatio: 0.13, trayCapacity: 3, trayChallenge: true, gateChallenge: false, pairChoice: { primaryPairIndex: 12, secondaryPairIndex: 13 }, camera: { targetZ: 1.2, distanceScale: 1 } },
-  fortress: { id: 'fortress', label: 'Fortress', description: '44 tiles · pair carefully before breaching the keyed core.', positions: FORTRESS, hints: 3, shuffles: 2, hiddenRatio: 0.17, trayCapacity: 3, trayChallenge: true, gateChallenge: true, pairChoice: { primaryPairIndex: 1, secondaryPairIndex: 2 }, camera: { targetZ: 1.2, distanceScale: 1 } },
-  pagoda: { id: 'pagoda', label: 'Pagoda', description: '50 tiles · choose a safe pair before dismantling the eaves.', positions: PAGODA, hints: 2, shuffles: 1, hiddenRatio: 0.20, trayCapacity: 3, trayChallenge: true, gateChallenge: true, pairChoice: { primaryPairIndex: 2, secondaryPairIndex: 4 }, camera: { targetZ: 1.4, distanceScale: 1 } },
-  spiral: { id: 'spiral', label: 'Spiral', description: '56 tiles · one wrong pair can close the deep spiral.', positions: SPIRAL, hints: 2, shuffles: 1, hiddenRatio: 0.24, trayCapacity: 3, trayChallenge: true, gateChallenge: true, pairChoice: { primaryPairIndex: 1, secondaryPairIndex: 17 }, camera: { targetZ: 1.5, distanceScale: 1 } },
-  dragon: { id: 'dragon', label: 'Dragon', description: '62 tiles · key open the raised body.', positions: DRAGON, hints: 1, shuffles: 0, hiddenRatio: 0.28, trayCapacity: 3, trayChallenge: true, gateChallenge: true, camera: { targetZ: 1.5, distanceScale: 1 } },
-  'great-wall': { id: 'great-wall', label: 'Great Wall', description: '68 tiles · unlock the inner wall with no rescue.', positions: GREAT_WALL, hints: 0, shuffles: 0, hiddenRatio: 0.32, trayCapacity: 3, trayChallenge: true, gateChallenge: true, camera: { targetZ: 1.5, distanceScale: 1 } },
+  fortress: { id: 'fortress', label: 'Fortress', description: '44 tiles · one gold key opens the sealed core.', positions: FORTRESS, hints: 3, shuffles: 2, hiddenRatio: 0.17, trayCapacity: 3, trayChallenge: true, gateChallenge: true, gateDepth: 1, pairChoice: { primaryPairIndex: 1, secondaryPairIndex: 2 }, camera: { targetZ: 1.2, distanceScale: 1 } },
+  pagoda: { id: 'pagoda', label: 'Pagoda', description: '50 tiles · two keys unseal the nested eaves.', positions: PAGODA, hints: 2, shuffles: 1, hiddenRatio: 0.20, trayCapacity: 3, trayChallenge: true, gateChallenge: true, gateDepth: 2, pairChoice: { primaryPairIndex: 2, secondaryPairIndex: 4 }, camera: { targetZ: 1.4, distanceScale: 1 } },
+  spiral: { id: 'spiral', label: 'Spiral', description: '56 tiles · pair safely through two sealed turns.', positions: SPIRAL, hints: 2, shuffles: 1, hiddenRatio: 0.24, trayCapacity: 3, trayChallenge: true, gateChallenge: true, gateDepth: 2, pairChoice: { primaryPairIndex: 1, secondaryPairIndex: 17 }, camera: { targetZ: 1.5, distanceScale: 1 } },
+  dragon: { id: 'dragon', label: 'Dragon', description: '62 tiles · three keys open the raised body.', positions: DRAGON, hints: 1, shuffles: 0, hiddenRatio: 0.28, trayCapacity: 3, trayChallenge: true, gateChallenge: true, gateDepth: 3, camera: { targetZ: 1.5, distanceScale: 1 } },
+  'great-wall': { id: 'great-wall', label: 'Great Wall', description: '68 tiles · breach four seals with no rescue.', positions: GREAT_WALL, hints: 0, shuffles: 0, hiddenRatio: 0.32, trayCapacity: 3, trayChallenge: true, gateChallenge: true, gateDepth: 4, camera: { targetZ: 1.5, distanceScale: 1 } },
 };
 
 const removalOrders = new Map<DioramaStageId, Array<readonly [number, number]>>();
@@ -117,6 +118,17 @@ function pairChoiceTileIds(stage: DioramaStage, order: readonly (readonly [numbe
     throw new Error(`${stage.id} has an invalid pair-choice configuration`);
   }
   return new Set([...order[primaryPairIndex], ...order[secondaryPairIndex]]);
+}
+
+function gateKeyTileIds(stage: DioramaStage, order: readonly (readonly [number, number])[]): Set<number> {
+  if (!stage.gateChallenge) return new Set<number>();
+  const depth = stage.gateDepth ?? 0;
+  if (depth < 1 || depth >= order.length) throw new Error(`${stage.id} has an invalid gate depth`);
+  return new Set(order.slice(0, depth).flatMap((pair) => [...pair]));
+}
+
+function protectedHiddenTileIds(stage: DioramaStage, order: readonly (readonly [number, number])[]): Set<number> {
+  return new Set([...pairChoiceTileIds(stage, order), ...gateKeyTileIds(stage, order)]);
 }
 
 function hiddenForStage(
@@ -161,20 +173,41 @@ function applyGateMetadata(
   source: readonly TileState[],
 ): TileState[] {
   if (!stage.gateChallenge) return source.map((tile) => ({ ...tile }));
-  const gateId = `${stage.id}:core`;
-  const keys = new Set(order[0]);
-  const openingBranches = source
-    .filter((tile) => !keys.has(tile.id) && isFreeTile(tile, source))
-    .map((tile) => tile.id);
-  // Some layouts (notably Great Wall) naturally expose only the certified
-  // opening pair. In that case lock the next certified pair so the gate remains
-  // explicit without inventing an impossible alternate opening branch.
-  const gated = new Set(openingBranches.length ? openingBranches : (order[1] ?? []));
-  if (!gated.size) throw new Error(`${stage.id} has no tiles available for a gate`);
+  const depth = stage.gateDepth ?? 0;
+  if (depth < 1 || depth >= order.length) throw new Error(`${stage.id} has an invalid gate depth`);
+
+  const checkpoint = source.map((tile) => ({ ...tile }));
+  const pairChoiceIds = pairChoiceTileIds(stage, order);
+  const pairIndexByTile = new Map<number, number>();
+  order.forEach((pair, pairIndex) => pair.forEach((tileId) => pairIndexByTile.set(tileId, pairIndex)));
+  const keyByTile = new Map<number, string>();
+  const groupByTile = new Map<number, string>();
+
+  for (let step = 0; step < depth; step++) {
+    const gateId = `${stage.id}:seal-${step + 1}`;
+    const keyPair = order[step];
+    const keys = new Set(keyPair);
+    keyPair.forEach((tileId) => keyByTile.set(tileId, gateId));
+
+    // Seal alternate FREE branches at this checkpoint. Always include the
+    // next certified pair so sparse layouts still form a visible key chain.
+    const sealed = new Set([
+      ...checkpoint.filter((tile) => !keys.has(tile.id) && !pairChoiceIds.has(tile.id) && isFreeTile(tile, checkpoint)).map((tile) => tile.id),
+      ...order[step + 1],
+    ]);
+    sealed.forEach((tileId) => {
+      if ((pairIndexByTile.get(tileId) ?? -1) > step) groupByTile.set(tileId, gateId);
+    });
+    keyPair.forEach((tileId) => { checkpoint[tileId].removed = true; });
+  }
+
+  for (const gateId of new Set(keyByTile.values())) {
+    if (![...groupByTile.values()].includes(gateId)) throw new Error(`${stage.id} has an empty sealed area for ${gateId}`);
+  }
   return source.map((tile) => ({
     ...tile,
-    gateKey: keys.has(tile.id) ? gateId : undefined,
-    gateGroup: gated.has(tile.id) ? gateId : undefined,
+    gateKey: keyByTile.get(tile.id),
+    gateGroup: groupByTile.get(tile.id),
   }));
 }
 
@@ -190,7 +223,7 @@ export function createDioramaDeal(stageId: DioramaStageId, random: RandomSource 
   order.forEach(([first, second], index) => { sourceTypes[first] = sourceTypes[second] = pairFaces[index]; });
   const types = applyPairChoiceTypes(stage, order, sourceTypes);
 
-  const hidden = hiddenForStage(stage, order, random, pairChoiceTileIds(stage, order));
+  const hidden = hiddenForStage(stage, order, random, protectedHiddenTileIds(stage, order));
   const tiles = applyGateMetadata(stage, order, buildTiles(stage, types, hidden));
   const solution: SolverAction[] = [];
   for (const [firstId, secondId] of order) {
@@ -212,7 +245,7 @@ export function createDioramaTrayDeal(stageId: DioramaStageId, random: RandomSou
   const types = createSeparatedTrayChallengeTypes(stage.positions, order, stage.trayCapacity, random);
   const pairOnlyTiles = applyGateMetadata(stage, order, buildTiles(stage, types, new Set<number>()));
   if (analyzeBoard(pairOnlyTiles, 100_000).status !== 'UNSOLVABLE') throw new Error(`${stageId} tray deal still has a pair-only solution`);
-  const hidden = hiddenForStage(stage, order, random);
+  const hidden = hiddenForStage(stage, order, random, gateKeyTileIds(stage, order));
   const tiles = applyGateMetadata(stage, order, buildTiles(stage, types, hidden));
   const solution: SolverAction[] = [];
   for (const [firstId, secondId] of order) {

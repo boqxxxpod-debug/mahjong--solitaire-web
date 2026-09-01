@@ -28,6 +28,7 @@ test('catalog has ten stable stages with a strictly increasing difficulty curve'
   ]);
   assert.deepEqual(DIORAMA_STAGE_ORDER.map((id) => DIORAMA_STAGES[id].positions.length), [24, 28, 32, 36, 40, 44, 50, 56, 62, 68]);
   assert.deepEqual(DIORAMA_STAGE_ORDER.map((id) => DIORAMA_STAGES[id].hiddenRatio), [0, 0.04, 0.07, 0.10, 0.13, 0.17, 0.20, 0.24, 0.28, 0.32]);
+  assert.deepEqual(DIORAMA_STAGE_ORDER.map((id) => DIORAMA_STAGES[id].gateDepth ?? 0), [0, 0, 0, 0, 0, 1, 2, 2, 3, 4]);
   const normalized = new Map();
   for (const [index, id] of DIORAMA_STAGE_ORDER.entries()) {
     const stage = DIORAMA_STAGES[id], { positions } = stage;
@@ -122,29 +123,51 @@ test('late pair-mode stages expose a visible four-of-a-kind fork with a proven l
   }
 });
 
-test('Fortress and later stages lock alternate opening branches behind two key tiles', () => {
+test('Fortress and later stages open progressively deeper sealed areas with visible key pairs', () => {
   for (const [index, id] of DIORAMA_STAGE_ORDER.entries()) {
     const stage = DIORAMA_STAGES[id];
     const deal = createDioramaDeal(id, seeded(7000 + index));
+    const depth = stage.gateDepth ?? 0;
     const keys = deal.tiles.filter((tile) => tile.gateKey);
     const gated = deal.tiles.filter((tile) => tile.gateGroup);
     if (!stage.gateChallenge) {
+      assert.equal(depth, 0, `${id} has no gate depth before Fortress`);
       assert.equal(keys.length, 0, `${id} has no keys before Fortress`);
       assert.equal(gated.length, 0, `${id} has no gated tiles before Fortress`);
       continue;
     }
 
-    assert.equal(keys.length, 2, `${id} has exactly two keys`);
-    assert.deepEqual(keys.map((tile) => tile.id).sort((a, b) => a - b), [...deal.removalPairs[0]].sort((a, b) => a - b), `${id} keys are the certified opening pair`);
-    assert.ok(gated.length >= 1, `${id} gates at least one alternate opening tile`);
+    assert.equal(keys.length, depth * 2, `${id} has one two-tile key per seal`);
+    assert.equal(new Set(keys.map((tile) => tile.gateKey)).size, depth, `${id} has ${depth} distinct seals`);
+    assert.ok(keys.every((tile) => !tile.faceDown && !tile.originallyFaceDown), `${id} keeps every gold key visible`);
     assert.ok(gated.every((tile) => isGateLocked(tile, deal.tiles)), `${id} gated tiles are locked while keys remain`);
     assert.ok(gated.every((tile) => !isFreeTile(tile, deal.tiles)), `${id} gate overrides normal FREE status`);
+    assert.equal(replayDioramaCertificate(deal.tiles, deal.solution), true, `${id} keeps its certified route`);
 
-    const unlocked = deal.tiles.map((tile) => ({ ...tile, removed: tile.removed || Boolean(tile.gateKey) }));
-    assert.ok(gated.some((tile) => {
-      const candidate = unlocked.find((current) => current.id === tile.id);
-      return candidate && !isGateLocked(candidate, unlocked) && isFreeTile(candidate, unlocked);
-    }), `${id} opens at least one alternate branch after both keys are removed`);
+    const state = deal.tiles.map((tile) => ({ ...tile }));
+    const gateIds = Array.from({ length: depth }, (_, step) => state[deal.removalPairs[step][0]].gateKey);
+    for (let step = 0; step < depth; step++) {
+      const keyPair = deal.removalPairs[step];
+      const gateId = gateIds[step];
+      assert.ok(gateId, `${id} seal ${step + 1} has an id`);
+      assert.ok(keyPair.every((tileId) => state[tileId].gateKey === gateId), `${id} seal ${step + 1} uses its certified key pair`);
+      assert.ok(keyPair.every((tileId) => !isGateLocked(state[tileId], state) && isFreeTile(state[tileId], state)), `${id} exposes only the current key pair in the chain`);
+      if (step > 0) assert.ok(keyPair.every((tileId) => state[tileId].gateGroup === gateIds[step - 1]), `${id} key ${step + 1} was sealed by key ${step}`);
+
+      const sealed = state.filter((tile) => !tile.removed && tile.gateGroup === gateId);
+      assert.ok(sealed.length >= 2, `${id} seal ${step + 1} protects an area`);
+      assert.ok(sealed.every((tile) => isGateLocked(tile, state) && !isFreeTile(tile, state)), `${id} seal ${step + 1} stays closed before its key is removed`);
+
+      assert.equal(removePair(state[keyPair[0]], state[keyPair[1]], state), true, `${id} removes key ${step + 1}`);
+      const nextPair = deal.removalPairs[step + 1];
+      assert.ok(nextPair.every((tileId) => state[tileId].gateGroup === gateId), `${id} seal ${step + 1} contains the next certified pair`);
+      assert.ok(nextPair.every((tileId) => !isGateLocked(state[tileId], state) && isFreeTile(state[tileId], state)), `${id} key ${step + 1} opens the next pair`);
+
+      for (let later = step + 1; later < depth; later++) {
+        const laterSealed = state.filter((tile) => !tile.removed && tile.gateGroup === gateIds[later]);
+        assert.ok(laterSealed.length >= 2 && laterSealed.every((tile) => isGateLocked(tile, state)), `${id} keeps seal ${later + 1} closed`);
+      }
+    }
   }
 });
 
@@ -173,6 +196,7 @@ test('tray mode starts requiring temporary storage at higher difficulty', () => 
     const openingFaces = openingIds.map((tileId) => deal.tiles[tileId].type);
     assert.equal(new Set(openingFaces).size, stage.trayCapacity, `${id} fills the tray with distinct temporary tiles before matches arrive`);
     assert.notEqual(deal.tiles[deal.removalPairs[0][0]].type, deal.tiles[deal.removalPairs[0][1]].type, `${id} does not expose the canonical pair as an immediate match`);
+    if (stage.gateChallenge) assert.ok(deal.tiles.filter((tile) => tile.gateKey).every((tile) => !tile.faceDown && !tile.originallyFaceDown), `${id} keeps tray keys visible`);
     assert.ok(deal.solution.some((action) => action.kind === 'tray'), `${id} has a tray certificate`);
     const pairOnlyTiles = deal.tiles.map((tile) => ({ ...tile, faceDown: false, originallyFaceDown: false }));
     assert.equal(analyzeBoard(pairOnlyTiles, 100_000).status, 'UNSOLVABLE', `${id} cannot be cleared without the tray`);
