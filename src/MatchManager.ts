@@ -66,7 +66,11 @@ export class MatchManager {
       this.board.discardHintPlan(); this.hintTargetIds.clear(); this.hintVisitedStateHashes.clear();
     }
 
-    if (!this.board.isFree(tile)) { tile.flash('blocked'); this.ui.showMessage('この牌はまだ取得できません', true); return; }
+    if (!this.board.isFree(tile)) {
+      tile.flash('blocked');
+      this.ui.showMessage(this.board.isGateLocked(tile) ? '封印中です。金色の鍵牌を先に消してください' : 'この牌はまだ取得できません', true);
+      return;
+    }
     if (tile.faceDown) {
       if (!(wasHintTarget && this.hintTargetIds.size === 1)) this.board.discardHintPlan();
       this.hintTargetIds.clear(); this.recordHistory(); void this.revealFaceDown(tile); return;
