@@ -9,6 +9,8 @@ export interface TileState {
   originallyFaceDown?: boolean;
   gateKey?: string;
   gateGroup?: string;
+  /** Identifies the two load-bearing tiles whose removal opens several routes. */
+  bottleneck?: string;
 }
 
 export interface TilePosition { x: number; y: number; z: number; }
@@ -103,6 +105,7 @@ export function boardStateHash(tiles: readonly TileState[]): string {
       tile.originallyFaceDown ? 1 : 0,
       tile.gateKey ?? '-',
       tile.gateGroup ?? '-',
+      tile.bottleneck ?? '-',
     ].join(':'))
     .join('|');
 }

@@ -35,7 +35,7 @@ const CAMERA_REFERENCE_BOUNDS = layoutBounds([
   ...Object.values(DIORAMA_STAGES).flatMap((stage) => stage.positions),
 ]);
 
-interface InitialTileDefinition { type: string; faceDown: boolean; gateKey?: string; gateGroup?: string }
+interface InitialTileDefinition { type: string; faceDown: boolean; gateKey?: string; gateGroup?: string; bottleneck?: string }
 
 export class BoardManager {
   tiles: Tile[] = [];
@@ -122,7 +122,9 @@ export class BoardManager {
     });
     this.difficulty = difficulty; this.dealPlayRule = playRule; this.currentDioramaStageId = undefined;
     this.tiles = nextTiles;
-    this.initialDeal = nextTiles.map((tile) => ({ type: tile.type, faceDown: tile.faceDown, gateKey: tile.gateKey, gateGroup: tile.gateGroup }));
+    this.initialDeal = nextTiles.map((tile) => ({
+      type: tile.type, faceDown: tile.faceDown, gateKey: tile.gateKey, gateGroup: tile.gateGroup, bottleneck: tile.bottleneck,
+    }));
     this.tiles.forEach((tile) => this.scene.add(tile.mesh));
     if (this.tileMeshCount !== expectedCount) throw new Error(`${difficulty} scene contains ${this.tileMeshCount}/${expectedCount} tile meshes`);
     this.assertRenderable(expectedCount);
@@ -153,7 +155,7 @@ export class BoardManager {
     return this.tiles.map((tile) => ({
       id: tile.id, type: tile.type, ...tile.logical, removed: tile.removed,
       faceDown: tile.faceDown, originallyFaceDown: tile.originallyFaceDown,
-      gateKey: tile.gateKey, gateGroup: tile.gateGroup,
+      gateKey: tile.gateKey, gateGroup: tile.gateGroup, bottleneck: tile.bottleneck,
     }));
   }
 
@@ -164,15 +166,17 @@ export class BoardManager {
       id: tile.id, type: this.initialDeal[index].type, ...tile.logical, removed: false,
       faceDown: this.initialDeal[index].faceDown, originallyFaceDown: tile.originallyFaceDown,
       gateKey: this.initialDeal[index].gateKey, gateGroup: this.initialDeal[index].gateGroup,
+      bottleneck: this.initialDeal[index].bottleneck,
     }));
   }
 
   restoreInitialDeal(initial: readonly TileState[]): void {
     if (initial.length !== this.tiles.length || initial.some((state, index) => {
-      const hasSavedGateMetadata = state.gateKey !== undefined || state.gateGroup !== undefined;
+      const hasSavedChallengeMetadata = state.gateKey !== undefined || state.gateGroup !== undefined || state.bottleneck !== undefined;
       return state.id !== index || state.x !== this.tiles[index].logical.x || state.y !== this.tiles[index].logical.y ||
         state.z !== this.tiles[index].logical.z || state.removed || Boolean(state.faceDown) !== Boolean(state.originallyFaceDown) ||
-        (hasSavedGateMetadata && (state.gateKey !== this.tiles[index].gateKey || state.gateGroup !== this.tiles[index].gateGroup));
+        (hasSavedChallengeMetadata && (state.gateKey !== this.tiles[index].gateKey || state.gateGroup !== this.tiles[index].gateGroup ||
+          state.bottleneck !== this.tiles[index].bottleneck));
     }) || initial.map((tile) => tile.type).sort().join('\0') !== this.tiles.map((tile) => tile.type).sort().join('\0') ||
       initial.filter((tile) => tile.originallyFaceDown).length !== this.tiles.filter((tile) => tile.originallyFaceDown).length) {
       throw new Error('Saved initial deal does not match board');
@@ -182,6 +186,7 @@ export class BoardManager {
       faceDown: Boolean(tile.faceDown),
       gateKey: this.tiles[index].gateKey,
       gateGroup: this.tiles[index].gateGroup,
+      bottleneck: this.tiles[index].bottleneck,
     }));
     this.tiles.forEach((tile, index) => { tile.originallyFaceDown = Boolean(initial[index].originallyFaceDown); });
   }
@@ -298,10 +303,14 @@ export class BoardManager {
 
   private replaceTiles(states: readonly TileState[]): void {
     this.discardHintPlan();
-    const nextTiles = states.map((state) => new Tile(state.id, state.type, state, this.geometry, state.faceDown, state.gateKey, state.gateGroup));
+    const nextTiles = states.map((state) => new Tile(
+      state.id, state.type, state, this.geometry, state.faceDown, state.gateKey, state.gateGroup, state.bottleneck,
+    ));
     this.tiles.forEach((tile) => { this.scene.remove(tile.mesh); (tile.mesh.material as THREE.Material[]).forEach((material) => material.dispose()); });
     this.tiles = nextTiles;
-    this.initialDeal = states.map((tile) => ({ type: tile.type, faceDown: Boolean(tile.faceDown), gateKey: tile.gateKey, gateGroup: tile.gateGroup }));
+    this.initialDeal = states.map((tile) => ({
+      type: tile.type, faceDown: Boolean(tile.faceDown), gateKey: tile.gateKey, gateGroup: tile.gateGroup, bottleneck: tile.bottleneck,
+    }));
     this.tiles.forEach((tile) => this.scene.add(tile.mesh)); this.assertRenderable(states.length); this.refreshFreeTiles();
   }
 

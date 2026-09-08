@@ -29,6 +29,7 @@ export class Tile {
     faceDown = false,
     readonly gateKey?: string,
     readonly gateGroup?: string,
+    readonly bottleneck?: string,
   ) {
     this.faceDown = faceDown;
     this.originallyFaceDown = faceDown;
@@ -98,9 +99,10 @@ export class Tile {
   setSelected(selected: boolean): void {
     this.selected = selected;
     this.mesh.position.y = this.logical.z * TILE_LAYER_HEIGHT + (selected ? 0.32 : 0);
+    const accent = this.restingAccent();
     this.materials().forEach((material) => {
-      material.emissive.setHex(selected ? 0x2b8f77 : this.gateKey ? 0xd4a72c : 0x000000);
-      material.emissiveIntensity = selected ? 0.5 : this.gateKey ? 0.18 : 0;
+      material.emissive.setHex(selected ? 0x2b8f77 : accent.color);
+      material.emissiveIntensity = selected ? 0.5 : accent.intensity;
     });
   }
 
@@ -147,12 +149,13 @@ export class Tile {
   }
 
   setFree(free: boolean): void {
+    const accent = this.restingAccent();
     this.materials().forEach((material) => {
       const baseColor = material.userData.baseColor as number;
       material.color.setHex(baseColor).multiplyScalar(free ? 1 : 0.58);
       if (!this.selected) {
-        material.emissive.setHex(this.gateKey ? 0xd4a72c : 0x000000);
-        material.emissiveIntensity = this.gateKey ? 0.18 : 0;
+        material.emissive.setHex(accent.color);
+        material.emissiveIntensity = accent.intensity;
       }
     });
   }
@@ -172,5 +175,11 @@ export class Tile {
   private materials(): THREE.MeshStandardMaterial[] {
     return (this.mesh.material as THREE.Material[]).filter((material): material is THREE.MeshStandardMaterial =>
       material instanceof THREE.MeshStandardMaterial);
+  }
+
+  private restingAccent(): { color: number; intensity: number } {
+    if (this.gateKey) return { color: 0xd4a72c, intensity: 0.18 };
+    if (this.bottleneck) return { color: 0xc76532, intensity: 0.22 };
+    return { color: 0x000000, intensity: 0 };
   }
 }
