@@ -84,11 +84,12 @@ export class MatchManager {
       this.hintTargetIds.clear(); this.recordHistory();
       const first = this.selected; this.selected.setSelected(false);
       this.board.remove(this.selected); this.board.remove(tile); this.selected = null;
+      const clearedBottleneck = this.clearedBottleneck(first, tile);
       if (this.revealedFaceDownTile === first || this.revealedFaceDownTile === tile) this.revealedFaceDownTile = null;
       this.moves++; this.ui.updateMoves(this.moves);
       const count = this.board.activeTiles.length; this.ui.updateRemaining(count);
       if (count === 0) { this.discardHint(true); this.invalidateSearch(); clearSavedGame(); if (this.mode === 'tour' && this.stageId) this.completeStage(); else this.ui.showClear(this.moves); }
-      else { this.ui.showMessage('マッチ！ クリア可能性を確認しています'); this.persist(); this.checkProgress(); }
+      else { this.ui.showMessage(clearedBottleneck ? '銅色の支柱を突破！複数の進路が開きました' : 'マッチ！ クリア可能性を確認しています'); this.persist(); this.checkProgress(clearedBottleneck); }
       return;
     }
     this.board.discardHintPlan(); this.hintTargetIds.clear(); this.hintVisitedStateHashes.clear();
@@ -101,12 +102,19 @@ export class MatchManager {
     const nextTray = moveTileToTray(states[tile.id], states, this.tray, capacity);
     if (!nextTray) { tile.flash('blocked'); this.ui.showMessage('トレイが満杯です。一致する牌を選んでください', true); return; }
     this.processingTap = true; this.recordHistory(); this.board.remove(tile); this.tray = nextTray.map((held) => ({ ...held }));
+    const clearedBottleneck = this.clearedBottleneck(tile);
     this.moves++; this.ui.updateMoves(this.moves); this.ui.updateRemaining(this.board.activeTiles.length); this.renderTray();
     if (matchedType) this.ui.showTrayMatch(matchedType); this.processingTap = false;
     if (isTrayClear(this.board.states(), this.tray)) { this.discardHint(true); this.invalidateSearch(); clearSavedGame();
       if (this.mode === 'tour' && this.stageId) this.completeStage(); else this.ui.showClear(this.moves); return; }
     if (isTrayGameOver(this.board.states(), this.tray, capacity)) { this.stuck = true; this.persist(); this.ui.showStuck(this.shuffles !== 0, true); return; }
-    this.ui.showMessage(this.tray.length < capacity ? '牌をトレイへ移しました' : '満杯：一致するFREE TILEで救済できます'); this.persist(); this.checkProgress();
+    this.ui.showMessage(clearedBottleneck ? '銅色の支柱を突破！複数の進路が開きました' :
+      this.tray.length < capacity ? '牌をトレイへ移しました' : '満杯：一致するFREE TILEで救済できます'); this.persist(); this.checkProgress(clearedBottleneck);
+  }
+
+  private clearedBottleneck(...removedTiles: readonly Tile[]): boolean {
+    const bottleneck = removedTiles.find((tile) => tile.bottleneck)?.bottleneck;
+    return Boolean(bottleneck && this.board.activeTiles.every((tile) => tile.bottleneck !== bottleneck));
   }
 
   private changePlayRule(rule: PlayRule): void {
@@ -296,29 +304,29 @@ export class MatchManager {
     this.selected = null; this.stuck = false; this.ui.updateMoves(this.moves); this.ui.updateRemaining(this.board.activeTiles.length); this.ui.hideResult(); this.renderTray(); this.persist(); this.checkProgress();
   }
 
-  private checkProgress(): void {
+  private checkProgress(preserveMessage = false): void {
     const revision = ++this.revision; this.worker?.terminate();
     window.clearTimeout(this.checkingTimer); window.clearTimeout(this.searchTimer);
     const candidate = this.snapshot();
     const worker = new Worker(new URL('./solver.worker.ts', import.meta.url), { type: 'module' }); this.worker = worker;
-    this.checkingTimer = window.setTimeout(() => { if (revision === this.revision && !this.hintTargetIds.size) this.ui.showMessage('CHECKING...'); }, 120);
+    this.checkingTimer = window.setTimeout(() => { if (revision === this.revision && !this.hintTargetIds.size && !preserveMessage) this.ui.showMessage('CHECKING...'); }, 120);
     this.searchTimer = window.setTimeout(() => {
       if (revision !== this.revision) return; worker.terminate(); this.worker = undefined;
-      this.applySearchResult(revision, candidate, { status: 'UNKNOWN', solvable: false, canRemovePair: false, visitedStates: 0, cycleStates: 0, maxDepth: 0, removalPairs: 0, revealMoves: 0 });
+      this.applySearchResult(revision, candidate, { status: 'UNKNOWN', solvable: false, canRemovePair: false, visitedStates: 0, cycleStates: 0, maxDepth: 0, removalPairs: 0, revealMoves: 0 }, preserveMessage);
     }, 3000);
     worker.onmessage = ({ data }: MessageEvent<{ revision: number; result: SearchResult }>) => {
       if (data.revision !== this.revision || data.revision !== revision) return;
-      window.clearTimeout(this.searchTimer); worker.terminate(); this.worker = undefined; this.applySearchResult(revision, candidate, data.result);
+      window.clearTimeout(this.searchTimer); worker.terminate(); this.worker = undefined; this.applySearchResult(revision, candidate, data.result, preserveMessage);
     };
     worker.postMessage({ kind: 'analyze', revision, tiles: candidate.tiles, playRule: this.playRule, tray: candidate.tray, trayCapacity: this.currentTrayCapacity(), nodeLimit: 1_000_000 });
   }
 
-  private applySearchResult(revision: number, candidate: Snapshot, result: SearchResult): void {
+  private applySearchResult(revision: number, candidate: Snapshot, result: SearchResult, preserveMessage = false): void {
     if (revision !== this.revision) return; window.clearTimeout(this.checkingTimer);
     if (result.status === 'SOLVABLE') {
       this.safe = candidate; this.stuck = false; this.ui.hideResult();
       this.persist();
-      if (!this.hintTargetIds.size) this.ui.showMessage('同じ牌を2枚選んでください');
+      if (!this.hintTargetIds.size && !preserveMessage) this.ui.showMessage('同じ牌を2枚選んでください');
     } else if (result.status === 'UNSOLVABLE') {
       this.discardHint(true); this.stuck = true; this.ui.showStuck(this.shuffles !== 0, Boolean(this.safe));
     } else if (result.status === 'UNKNOWN' && !this.hintTargetIds.size) {

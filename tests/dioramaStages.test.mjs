@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyzeBoard, analyzeTrayBoard, boardStateHash, getAvailableActions, isFreeTile, isGateLocked, isTileUncovered, removePair } from '../.test-dist/GameRules.js';
+import { analyzeBoard, analyzeTrayBoard, boardStateHash, getAvailableActions, isFreeTile, isGateLocked, isTileUncovered, moveTileToTray, removePair } from '../.test-dist/GameRules.js';
 import { DIFFICULTIES, createTrayChallengeDeal } from '../.test-dist/BoardLayout.js';
 import { DIORAMA_STAGE_ORDER, DIORAMA_STAGES, createDioramaDeal, createDioramaTrayDeal, replayDioramaCertificate, replayDioramaTrayCertificate } from '../.test-dist/DioramaStages.js';
 
@@ -29,6 +29,7 @@ test('catalog has ten stable stages with a strictly increasing difficulty curve'
   assert.deepEqual(DIORAMA_STAGE_ORDER.map((id) => DIORAMA_STAGES[id].positions.length), [24, 28, 32, 36, 40, 44, 50, 56, 62, 68]);
   assert.deepEqual(DIORAMA_STAGE_ORDER.map((id) => DIORAMA_STAGES[id].hiddenRatio), [0, 0.04, 0.07, 0.10, 0.13, 0.17, 0.20, 0.24, 0.28, 0.32]);
   assert.deepEqual(DIORAMA_STAGE_ORDER.map((id) => DIORAMA_STAGES[id].gateDepth ?? 0), [0, 0, 0, 0, 0, 1, 2, 2, 3, 4]);
+  assert.deepEqual(DIORAMA_STAGE_ORDER.map((id) => DIORAMA_STAGES[id].bottleneckPairIndex ?? -1), [-1, -1, -1, -1, -1, -1, 9, 11, 17, 9]);
   const normalized = new Map();
   for (const [index, id] of DIORAMA_STAGE_ORDER.entries()) {
     const stage = DIORAMA_STAGES[id], { positions } = stage;
@@ -168,6 +169,70 @@ test('Fortress and later stages open progressively deeper sealed areas with visi
         assert.ok(laterSealed.length >= 2 && laterSealed.every((tile) => isGateLocked(tile, state)), `${id} keeps seal ${later + 1} closed`);
       }
     }
+  }
+});
+
+test('Pagoda and later stages expose a visible bottleneck pair that opens at least four routes', () => {
+  for (const [stageIndex, id] of DIORAMA_STAGE_ORDER.entries()) {
+    const stage = DIORAMA_STAGES[id];
+    const deal = createDioramaDeal(id, seeded(8100 + stageIndex));
+    const bottleneckTiles = deal.tiles.filter((tile) => tile.bottleneck);
+    if (stage.bottleneckPairIndex === undefined) {
+      assert.equal(bottleneckTiles.length, 0, `${id} has no bottleneck before Pagoda`);
+      continue;
+    }
+
+    const pair = deal.removalPairs[stage.bottleneckPairIndex];
+    assert.deepEqual(bottleneckTiles.map((tile) => tile.id).sort((a, b) => a - b), [...pair].sort((a, b) => a - b), `${id} marks exactly its certified bottleneck pair`);
+    assert.equal(new Set(bottleneckTiles.map((tile) => tile.bottleneck)).size, 1, `${id} links both support tiles`);
+    assert.ok(bottleneckTiles.every((tile) => !tile.faceDown && !tile.originallyFaceDown), `${id} keeps the copper pair visible`);
+    assert.ok(bottleneckTiles.every((tile) => !tile.gateKey), `${id} keeps bottlenecks distinct from gold keys`);
+    assert.notEqual(boardStateHash(deal.tiles), boardStateHash(deal.tiles.map((tile) => ({ ...tile, bottleneck: undefined }))), `${id} includes bottleneck metadata in its state identity`);
+
+    const state = deal.tiles.map((tile) => ({ ...tile }));
+    for (let pairIndex = 0; pairIndex < stage.bottleneckPairIndex; pairIndex++) {
+      const [firstId, secondId] = deal.removalPairs[pairIndex];
+      state[firstId].faceDown = false;
+      state[secondId].faceDown = false;
+      assert.equal(removePair(state[firstId], state[secondId], state), true, `${id} reaches its bottleneck checkpoint`);
+    }
+
+    assert.ok(pair.every((tileId) => isFreeTile(state[tileId], state)), `${id} exposes both support tiles at the checkpoint`);
+    const freeBefore = new Set(state.filter((tile) => isFreeTile(tile, state)).map((tile) => tile.id));
+    const uncoveredBefore = new Set(state.filter((tile) => isTileUncovered(tile, state)).map((tile) => tile.id));
+    assert.equal(removePair(state[pair[0]], state[pair[1]], state), true, `${id} removes its bottleneck pair`);
+    const newlyFree = state.filter((tile) => isFreeTile(tile, state) && !freeBefore.has(tile.id));
+    const newlyUncovered = state.filter((tile) => isTileUncovered(tile, state) && !uncoveredBefore.has(tile.id));
+    assert.ok(newlyFree.length >= 4, `${id} opens at least four routes at once`);
+    assert.ok(newlyUncovered.length >= 2, `${id} uncovers multiple tiles at once`);
+
+    const trayDeal = createDioramaTrayDeal(id, seeded(9100 + stageIndex));
+    const trayPair = trayDeal.removalPairs[stage.bottleneckPairIndex];
+    assert.ok(trayPair.every((tileId) => trayDeal.tiles[tileId].bottleneck && !trayDeal.tiles[tileId].faceDown), `${id} preserves its visible bottleneck in tray mode`);
+    assert.equal(replayDioramaTrayCertificate(trayDeal.tiles, trayDeal.solution, stage.trayCapacity), true, `${id} keeps its tray certificate with the bottleneck`);
+
+    const trayState = trayDeal.tiles.map((tile) => ({ ...tile }));
+    const pendingBottleneckIds = new Set(trayPair);
+    let tray = [];
+    let trayFreeBefore;
+    for (const action of trayDeal.solution) {
+      if (action.kind === 'reveal') {
+        trayState[action.tileId].faceDown = false;
+        continue;
+      }
+      if (action.kind !== 'tray') continue;
+      if (pendingBottleneckIds.size === 2 && pendingBottleneckIds.has(action.tileId)) {
+        trayFreeBefore = new Set(trayState.filter((tile) => isFreeTile(tile, trayState)).map((tile) => tile.id));
+      }
+      const nextTray = moveTileToTray(trayState[action.tileId], trayState, tray, stage.trayCapacity);
+      assert.notEqual(nextTray, null, `${id} legally replays each tray move before its bottleneck opens`);
+      tray = nextTray;
+      pendingBottleneckIds.delete(action.tileId);
+      if (!pendingBottleneckIds.size) break;
+    }
+    assert.ok(trayFreeBefore, `${id} reaches its tray bottleneck checkpoint`);
+    const newlyFreeInTray = trayState.filter((tile) => isFreeTile(tile, trayState) && !trayFreeBefore.has(tile.id));
+    assert.ok(newlyFreeInTray.length >= 4, `${id} opens at least four tray routes at once`);
   }
 });
 

@@ -39,6 +39,7 @@ export interface DioramaStage {
   gateChallenge: boolean;
   gateDepth?: number;
   pairChoice?: { primaryPairIndex: number; secondaryPairIndex: number };
+  bottleneckPairIndex?: number;
   camera: { targetZ: number; distanceScale: number };
 }
 
@@ -84,10 +85,10 @@ export const DIORAMA_STAGES: Readonly<Record<DioramaStageId, DioramaStage>> = {
   turtle: { id: 'turtle', label: 'Turtle', description: '36 tiles · unlock the shell.', positions: TURTLE, hints: 4, shuffles: 3, hiddenRatio: 0.10, trayCapacity: 4, trayChallenge: true, gateChallenge: false, camera: { targetZ: 1, distanceScale: 1 } },
   pyramid: { id: 'pyramid', label: 'Pyramid', description: '40 tiles · choose the right pair through the core.', positions: PYRAMID, hints: 3, shuffles: 2, hiddenRatio: 0.13, trayCapacity: 3, trayChallenge: true, gateChallenge: false, pairChoice: { primaryPairIndex: 12, secondaryPairIndex: 13 }, camera: { targetZ: 1.2, distanceScale: 1 } },
   fortress: { id: 'fortress', label: 'Fortress', description: '44 tiles · one gold key opens the sealed core.', positions: FORTRESS, hints: 3, shuffles: 2, hiddenRatio: 0.17, trayCapacity: 3, trayChallenge: true, gateChallenge: true, gateDepth: 1, pairChoice: { primaryPairIndex: 1, secondaryPairIndex: 2 }, camera: { targetZ: 1.2, distanceScale: 1 } },
-  pagoda: { id: 'pagoda', label: 'Pagoda', description: '50 tiles · two keys unseal the nested eaves.', positions: PAGODA, hints: 2, shuffles: 1, hiddenRatio: 0.20, trayCapacity: 3, trayChallenge: true, gateChallenge: true, gateDepth: 2, pairChoice: { primaryPairIndex: 2, secondaryPairIndex: 4 }, camera: { targetZ: 1.4, distanceScale: 1 } },
-  spiral: { id: 'spiral', label: 'Spiral', description: '56 tiles · pair safely through two sealed turns.', positions: SPIRAL, hints: 2, shuffles: 1, hiddenRatio: 0.24, trayCapacity: 3, trayChallenge: true, gateChallenge: true, gateDepth: 2, pairChoice: { primaryPairIndex: 1, secondaryPairIndex: 17 }, camera: { targetZ: 1.5, distanceScale: 1 } },
-  dragon: { id: 'dragon', label: 'Dragon', description: '62 tiles · three keys open the raised body.', positions: DRAGON, hints: 1, shuffles: 0, hiddenRatio: 0.28, trayCapacity: 3, trayChallenge: true, gateChallenge: true, gateDepth: 3, camera: { targetZ: 1.5, distanceScale: 1 } },
-  'great-wall': { id: 'great-wall', label: 'Great Wall', description: '68 tiles · breach four seals with no rescue.', positions: GREAT_WALL, hints: 0, shuffles: 0, hiddenRatio: 0.32, trayCapacity: 3, trayChallenge: true, gateChallenge: true, gateDepth: 4, camera: { targetZ: 1.5, distanceScale: 1 } },
+  pagoda: { id: 'pagoda', label: 'Pagoda', description: '50 tiles · two keys, then break the copper support.', positions: PAGODA, hints: 2, shuffles: 1, hiddenRatio: 0.20, trayCapacity: 3, trayChallenge: true, gateChallenge: true, gateDepth: 2, pairChoice: { primaryPairIndex: 2, secondaryPairIndex: 4 }, bottleneckPairIndex: 9, camera: { targetZ: 1.4, distanceScale: 1 } },
+  spiral: { id: 'spiral', label: 'Spiral', description: '56 tiles · preserve the copper pair that opens four routes.', positions: SPIRAL, hints: 2, shuffles: 1, hiddenRatio: 0.24, trayCapacity: 3, trayChallenge: true, gateChallenge: true, gateDepth: 2, pairChoice: { primaryPairIndex: 1, secondaryPairIndex: 17 }, bottleneckPairIndex: 11, camera: { targetZ: 1.5, distanceScale: 1 } },
+  dragon: { id: 'dragon', label: 'Dragon', description: '62 tiles · three keys hide a load-bearing copper pair.', positions: DRAGON, hints: 1, shuffles: 0, hiddenRatio: 0.28, trayCapacity: 3, trayChallenge: true, gateChallenge: true, gateDepth: 3, bottleneckPairIndex: 17, camera: { targetZ: 1.5, distanceScale: 1 } },
+  'great-wall': { id: 'great-wall', label: 'Great Wall', description: '68 tiles · breach four seals and one copper choke point.', positions: GREAT_WALL, hints: 0, shuffles: 0, hiddenRatio: 0.32, trayCapacity: 3, trayChallenge: true, gateChallenge: true, gateDepth: 4, bottleneckPairIndex: 9, camera: { targetZ: 1.5, distanceScale: 1 } },
 };
 
 const removalOrders = new Map<DioramaStageId, Array<readonly [number, number]>>();
@@ -127,8 +128,21 @@ function gateKeyTileIds(stage: DioramaStage, order: readonly (readonly [number, 
   return new Set(order.slice(0, depth).flatMap((pair) => [...pair]));
 }
 
+function bottleneckTileIds(stage: DioramaStage, order: readonly (readonly [number, number])[]): Set<number> {
+  if (stage.bottleneckPairIndex === undefined) return new Set<number>();
+  const pair = order[stage.bottleneckPairIndex];
+  if (!pair || stage.bottleneckPairIndex < (stage.gateDepth ?? 0)) {
+    throw new Error(`${stage.id} has an invalid bottleneck pair`);
+  }
+  const conflictingIds = new Set([...gateKeyTileIds(stage, order), ...pairChoiceTileIds(stage, order)]);
+  if (pair.some((tileId) => conflictingIds.has(tileId))) {
+    throw new Error(`${stage.id} bottleneck overlaps another challenge`);
+  }
+  return new Set(pair);
+}
+
 function protectedHiddenTileIds(stage: DioramaStage, order: readonly (readonly [number, number])[]): Set<number> {
-  return new Set([...pairChoiceTileIds(stage, order), ...gateKeyTileIds(stage, order)]);
+  return new Set([...pairChoiceTileIds(stage, order), ...gateKeyTileIds(stage, order), ...bottleneckTileIds(stage, order)]);
 }
 
 function hiddenForStage(
@@ -211,6 +225,27 @@ function applyGateMetadata(
   }));
 }
 
+function applyBottleneckMetadata(
+  stage: DioramaStage,
+  order: readonly (readonly [number, number])[],
+  source: readonly TileState[],
+): TileState[] {
+  const bottleneckIds = bottleneckTileIds(stage, order);
+  const bottleneck = bottleneckIds.size ? `${stage.id}:bottleneck` : undefined;
+  return source.map((tile) => ({
+    ...tile,
+    bottleneck: bottleneckIds.has(tile.id) ? bottleneck : undefined,
+  }));
+}
+
+function applyChallengeMetadata(
+  stage: DioramaStage,
+  order: readonly (readonly [number, number])[],
+  source: readonly TileState[],
+): TileState[] {
+  return applyBottleneckMetadata(stage, order, applyGateMetadata(stage, order, source));
+}
+
 /** Creates a deal whose recorded actions are a complete, canonical-rule replay.
  * Hidden choices contain at most one end of a required pair, so a reveal can
  * always be immediately followed by that pair's removal. */
@@ -224,7 +259,7 @@ export function createDioramaDeal(stageId: DioramaStageId, random: RandomSource 
   const types = applyPairChoiceTypes(stage, order, sourceTypes);
 
   const hidden = hiddenForStage(stage, order, random, protectedHiddenTileIds(stage, order));
-  const tiles = applyGateMetadata(stage, order, buildTiles(stage, types, hidden));
+  const tiles = applyChallengeMetadata(stage, order, buildTiles(stage, types, hidden));
   const solution: SolverAction[] = [];
   for (const [firstId, secondId] of order) {
     const hiddenId = hidden.has(firstId) ? firstId : hidden.has(secondId) ? secondId : null;
@@ -243,10 +278,13 @@ export function createDioramaTrayDeal(stageId: DioramaStageId, random: RandomSou
   if (!stage.trayChallenge) return createDioramaDeal(stageId, random);
   const order = removalOrder(stage);
   const types = createSeparatedTrayChallengeTypes(stage.positions, order, stage.trayCapacity, random);
-  const pairOnlyTiles = applyGateMetadata(stage, order, buildTiles(stage, types, new Set<number>()));
+  const pairOnlyTiles = applyChallengeMetadata(stage, order, buildTiles(stage, types, new Set<number>()));
   if (analyzeBoard(pairOnlyTiles, 100_000).status !== 'UNSOLVABLE') throw new Error(`${stageId} tray deal still has a pair-only solution`);
-  const hidden = hiddenForStage(stage, order, random, gateKeyTileIds(stage, order));
-  const tiles = applyGateMetadata(stage, order, buildTiles(stage, types, hidden));
+  const hidden = hiddenForStage(stage, order, random, new Set([
+    ...gateKeyTileIds(stage, order),
+    ...bottleneckTileIds(stage, order),
+  ]));
+  const tiles = applyChallengeMetadata(stage, order, buildTiles(stage, types, hidden));
   const solution: SolverAction[] = [];
   for (const [firstId, secondId] of order) {
     for (const tileId of [firstId, secondId]) {
