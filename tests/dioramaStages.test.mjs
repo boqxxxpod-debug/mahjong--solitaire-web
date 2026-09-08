@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyzeBoard, analyzeTrayBoard, boardStateHash, getAvailableActions, isFreeTile, isGateLocked, isTileUncovered, moveTileToTray, removePair } from '../.test-dist/GameRules.js';
+import { analyzeBoard, analyzeTrayBoard, boardStateHash, getAvailableActions, getCurrentMissionOrder, isFreeTile, isGateLocked, isMissionLocked, isTileUncovered, moveTileToTray, removePair } from '../.test-dist/GameRules.js';
 import { DIFFICULTIES, createTrayChallengeDeal } from '../.test-dist/BoardLayout.js';
 import { DIORAMA_STAGE_ORDER, DIORAMA_STAGES, createDioramaDeal, createDioramaTrayDeal, replayDioramaCertificate, replayDioramaTrayCertificate } from '../.test-dist/DioramaStages.js';
 
@@ -30,6 +30,9 @@ test('catalog has ten stable stages with a strictly increasing difficulty curve'
   assert.deepEqual(DIORAMA_STAGE_ORDER.map((id) => DIORAMA_STAGES[id].hiddenRatio), [0, 0.04, 0.07, 0.10, 0.13, 0.17, 0.20, 0.24, 0.28, 0.32]);
   assert.deepEqual(DIORAMA_STAGE_ORDER.map((id) => DIORAMA_STAGES[id].gateDepth ?? 0), [0, 0, 0, 0, 0, 1, 2, 2, 3, 4]);
   assert.deepEqual(DIORAMA_STAGE_ORDER.map((id) => DIORAMA_STAGES[id].bottleneckPairIndex ?? -1), [-1, -1, -1, -1, -1, -1, 9, 11, 17, 9]);
+  assert.deepEqual(DIORAMA_STAGE_ORDER.map((id) => DIORAMA_STAGES[id].missionPairIndices ?? []), [
+    [], [], [], [], [], [], [], [2, 5, 8], [3, 4, 8], [31, 32, 33],
+  ]);
   const normalized = new Map();
   for (const [index, id] of DIORAMA_STAGE_ORDER.entries()) {
     const stage = DIORAMA_STAGES[id], { positions } = stage;
@@ -233,6 +236,56 @@ test('Pagoda and later stages expose a visible bottleneck pair that opens at lea
     assert.ok(trayFreeBefore, `${id} reaches its tray bottleneck checkpoint`);
     const newlyFreeInTray = trayState.filter((tile) => isFreeTile(tile, trayState) && !trayFreeBefore.has(tile.id));
     assert.ok(newlyFreeInTray.length >= 4, `${id} opens at least four tray routes at once`);
+  }
+});
+
+test('Spiral and later stages expose three visible mission pairs that unlock in order', () => {
+  for (const [stageIndex, id] of DIORAMA_STAGE_ORDER.entries()) {
+    const stage = DIORAMA_STAGES[id];
+    const deal = createDioramaDeal(id, seeded(10100 + stageIndex));
+    const missionTiles = deal.tiles.filter((tile) => tile.missionOrder !== undefined);
+    if (!stage.missionPairIndices) {
+      assert.equal(missionTiles.length, 0, `${id} has no ordered mission before Spiral`);
+      continue;
+    }
+
+    const missionPairs = stage.missionPairIndices.map((pairIndex) => deal.removalPairs[pairIndex]);
+    assert.equal(missionTiles.length, 6, `${id} marks exactly three two-tile missions`);
+    missionPairs.forEach((pair, index) => {
+      assert.ok(pair.every((tileId) => deal.tiles[tileId].missionOrder === index + 1), `${id} maps mission ${index + 1} to its certified pair`);
+    });
+    assert.ok(missionTiles.every((tile) => !tile.faceDown && !tile.originallyFaceDown), `${id} keeps every mission tile visible`);
+    assert.ok(missionTiles.every((tile) => !tile.gateKey && !tile.bottleneck), `${id} keeps mission tiles distinct from keys and bottlenecks`);
+    assert.notEqual(boardStateHash(deal.tiles), boardStateHash(deal.tiles.map((tile) => ({ ...tile, missionOrder: undefined }))), `${id} includes mission metadata in its state identity`);
+    assert.equal(replayDioramaCertificate(deal.tiles, deal.solution), true, `${id} keeps its pair certificate with the ordered mission`);
+
+    const state = deal.tiles.map((tile) => ({ ...tile }));
+    for (let pairIndex = 0; pairIndex < stage.missionPairIndices[0]; pairIndex++) {
+      const [firstId, secondId] = deal.removalPairs[pairIndex];
+      state[firstId].faceDown = false; state[secondId].faceDown = false;
+      assert.equal(removePair(state[firstId], state[secondId], state), true, `${id} reaches its mission checkpoint`);
+    }
+
+    const physicalState = state.map((tile) => ({ ...tile, missionOrder: undefined }));
+    assert.ok(missionPairs.flat().every((tileId) => isFreeTile(physicalState[tileId], physicalState)), `${id} exposes all three mission pairs physically at one checkpoint`);
+    assert.equal(getCurrentMissionOrder(state), 1, `${id} starts with blue`);
+    assert.ok(missionPairs[0].every((tileId) => isFreeTile(state[tileId], state) && !isMissionLocked(state[tileId], state)), `${id} allows the blue pair`);
+    assert.ok(missionPairs.slice(1).flat().every((tileId) => !isFreeTile(state[tileId], state) && isMissionLocked(state[tileId], state)), `${id} locks violet and red`);
+    assert.equal(removePair(state[missionPairs[1][0]], state[missionPairs[1][1]], state), false, `${id} rejects a violet-first violation`);
+
+    for (let index = 0; index < missionPairs.length; index++) {
+      const pair = missionPairs[index];
+      assert.equal(getCurrentMissionOrder(state), index + 1, `${id} reports mission ${index + 1}`);
+      assert.ok(pair.every((tileId) => isFreeTile(state[tileId], state)), `${id} unlocks mission ${index + 1}`);
+      assert.equal(removePair(state[pair[0]], state[pair[1]], state), true, `${id} removes mission ${index + 1}`);
+    }
+    assert.equal(getCurrentMissionOrder(state), null, `${id} completes all three missions`);
+
+    const trayDeal = createDioramaTrayDeal(id, seeded(11100 + stageIndex));
+    const trayMissionTiles = trayDeal.tiles.filter((tile) => tile.missionOrder !== undefined);
+    assert.deepEqual(trayMissionTiles.map((tile) => [tile.id, tile.missionOrder]), missionTiles.map((tile) => [tile.id, tile.missionOrder]), `${id} uses the same mission pairs in tray mode`);
+    assert.ok(trayMissionTiles.every((tile) => !tile.faceDown && !tile.originallyFaceDown), `${id} keeps tray mission tiles visible`);
+    assert.equal(replayDioramaTrayCertificate(trayDeal.tiles, trayDeal.solution, stage.trayCapacity), true, `${id} keeps its tray certificate with the ordered mission`);
   }
 });
 

@@ -36,6 +36,37 @@ test('restart and new deal preserve geometry while replaying/changing the deal',
   expect(result.restart).toBe(initial.hash); expect(result.hash).not.toBe(initial.hash); expect(result.geometry).toEqual(initial.geometry);
 });
 
+test('ordered mission status explains violations and follows undo', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/?mode=tour&stage=spiral&seed=ordered-mission');
+  await expect.poll(() => page.evaluate(() => {
+    const game = (window as Window & { __mahjongGameTest?: any }).__mahjongGameTest;
+    return Boolean(game) && game.matches.worker === undefined;
+  })).toBe(true);
+  const message = page.locator('#message');
+  await expect(message).toContainText('MISSION 🔵 1/3');
+
+  await page.evaluate(() => {
+    const game = (window as Window & { __mahjongGameTest?: any }).__mahjongGameTest;
+    game.board.restore(game.board.states().map((tile: any) => ({ ...tile, removed: tile.missionOrder === undefined })));
+    const violet = game.board.tiles.find((tile: any) => tile.missionOrder === 2);
+    if (!violet || !game.board.isMissionLocked(violet)) throw new Error('Expected violet to remain mission-locked');
+    game.matches.select(violet);
+  });
+  await expect(message).toContainText('順番が違います');
+  await expect(message).toContainText('🔵 1/3を先に完了してください');
+
+  await page.evaluate(() => {
+    const game = (window as Window & { __mahjongGameTest?: any }).__mahjongGameTest;
+    const blue = game.board.tiles.filter((tile: any) => tile.missionOrder === 1);
+    if (blue.length !== 2 || blue.some((tile: any) => !game.board.isFree(tile))) throw new Error('Expected a free blue mission pair');
+    game.matches.select(blue[0]); game.matches.select(blue[1]);
+  });
+  await expect(message).toContainText('MISSION 🟣 2/3');
+  await page.evaluate(() => (window as Window & { __mahjongGameTest?: any }).__mahjongGameTest.matches.undo());
+  await expect(message).toContainText('MISSION 🔵 1/3');
+});
+
 test('every tour level keeps the same projected tile scale', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const widths: number[] = [];

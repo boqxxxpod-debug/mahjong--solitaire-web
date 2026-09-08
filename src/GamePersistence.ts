@@ -22,6 +22,7 @@ export type LoadResult = { game: SavedGame | null; discarded: boolean; unavailab
 const CLASSIC_COUNTS: Record<Difficulty, number> = { easy: 36, normal: 44, hard: 60 };
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const validOptionalTag = (value: unknown): boolean => value === undefined || (typeof value === 'string' && value.length > 0);
+const validOptionalMissionOrder = (value: unknown): boolean => value === undefined || (Number.isInteger(value) && (value as number) >= 1 && (value as number) <= 3);
 const validCounter = (value: unknown, maximum: number | null): value is number | null =>
   maximum === null ? value === null : Number.isInteger(value) && (value as number) >= 0 && (value as number) <= maximum;
 
@@ -34,7 +35,8 @@ function validTiles(value: unknown, count: number, initial?: readonly TileState[
     if (typeof id !== 'number' || !Number.isInteger(id) || id < 0 || id >= value.length || ids.has(id) ||
       typeof candidate.type !== 'string' || !candidate.type || !Number.isFinite(candidate.x) || !Number.isFinite(candidate.y) || !Number.isFinite(candidate.z) ||
       typeof candidate.removed !== 'boolean' || typeof candidate.faceDown !== 'boolean' || typeof candidate.originallyFaceDown !== 'boolean' ||
-      !validOptionalTag(candidate.gateKey) || !validOptionalTag(candidate.gateGroup) || !validOptionalTag(candidate.bottleneck)) return false;
+      !validOptionalTag(candidate.gateKey) || !validOptionalTag(candidate.gateGroup) || !validOptionalTag(candidate.bottleneck) ||
+      !validOptionalMissionOrder(candidate.missionOrder)) return false;
     if (positions && (candidate.x !== positions[id].x || candidate.y !== positions[id].y || candidate.z !== positions[id].z)) return false;
     ids.add(id);
   }

@@ -11,6 +11,8 @@ export interface TileState {
   gateGroup?: string;
   /** Identifies the two load-bearing tiles whose removal opens several routes. */
   bottleneck?: string;
+  /** One-based order for the stage's three mission pairs. */
+  missionOrder?: number;
 }
 
 export interface TilePosition { x: number; y: number; z: number; }
@@ -52,8 +54,21 @@ export function isGateLocked(tile: TileState, tiles: readonly TileState[]): bool
   return Boolean(tile.gateGroup && tiles.some((candidate) => !candidate.removed && candidate.gateKey === tile.gateGroup));
 }
 
+export function getCurrentMissionOrder(tiles: readonly TileState[]): number | null {
+  const activeOrders = tiles
+    .filter((tile) => !tile.removed && tile.missionOrder !== undefined)
+    .map((tile) => tile.missionOrder!);
+  return activeOrders.length ? Math.min(...activeOrders) : null;
+}
+
+export function isMissionLocked(tile: TileState, tiles: readonly TileState[]): boolean {
+  if (tile.missionOrder === undefined) return false;
+  const currentOrder = getCurrentMissionOrder(tiles);
+  return currentOrder !== null && tile.missionOrder > currentOrder;
+}
+
 export function isFreeTile(tile: TileState, tiles: readonly TileState[]): boolean {
-  if (tile.removed || isGateLocked(tile, tiles)) return false;
+  if (tile.removed || isGateLocked(tile, tiles) || isMissionLocked(tile, tiles)) return false;
   const active = tiles.filter((other) => !other.removed && other.id !== tile.id);
   if (!isTileUncovered(tile, tiles)) return false;
 
@@ -106,6 +121,7 @@ export function boardStateHash(tiles: readonly TileState[]): string {
       tile.gateKey ?? '-',
       tile.gateGroup ?? '-',
       tile.bottleneck ?? '-',
+      tile.missionOrder ?? '-',
     ].join(':'))
     .join('|');
 }

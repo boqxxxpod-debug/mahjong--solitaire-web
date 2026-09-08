@@ -32,9 +32,17 @@ export class UIManager {
   private elapsed = 0;
   private timer?: number;
   private shuffling = false;
+  private messageText = '同じ牌を2枚選んでください';
+  private messageError = false;
+  private missionStatus = '';
 
   updateRemaining(count: number): void { this.remaining.textContent = String(count); }
-  showMessage(text: string, error = false): void { this.message.textContent = text; this.message.classList.toggle('error', error); }
+  showMessage(text: string, error = false): void { this.messageText = text; this.messageError = error; this.renderMessage(); }
+  setMission(current: number | null, total: number): void {
+    const markers = ['', '🔵', '🟣', '🔴'];
+    this.missionStatus = total > 0 ? current === null ? `MISSION ✓ ${total}/${total}` : `MISSION ${markers[current] ?? ''} ${current}/${total}` : '';
+    this.renderMessage();
+  }
   onRestart(handler: () => void): void { this.restartButtons.forEach((button) => button.addEventListener('click', handler)); }
   onHint(handler: () => void): void { this.hintButton.addEventListener('click', handler); }
   onShuffle(handler: () => void): void { this.shuffleButtons.forEach((button) => button.addEventListener('click', handler)); }
@@ -167,6 +175,10 @@ export class UIManager {
     canvas.className = 'tray-tile-face';
     canvas.setAttribute('aria-hidden', 'true');
     return canvas;
+  }
+  private renderMessage(): void {
+    this.message.textContent = [this.missionStatus, this.messageText].filter(Boolean).join(' · ');
+    this.message.classList.toggle('error', this.messageError);
   }
   private showResult(title: string, detail: string): void {
     this.resultTitle.textContent = title; this.resultDetail.textContent = detail;
