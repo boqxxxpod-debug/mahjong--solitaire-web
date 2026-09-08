@@ -68,7 +68,10 @@ export class MatchManager {
 
     if (!this.board.isFree(tile)) {
       tile.flash('blocked');
-      this.ui.showMessage(this.board.isGateLocked(tile) ? '封印中です。金色の鍵牌を先に消してください' : 'この牌はまだ取得できません', true);
+      const currentMission = this.board.currentMissionOrder;
+      this.ui.showMessage(this.board.isGateLocked(tile) ? '封印中です。金色の鍵牌を先に消してください' :
+        this.board.isMissionLocked(tile) && currentMission !== null ? `順番が違います。${this.missionMarker(currentMission)} ${currentMission}/3を先に完了してください` :
+          'この牌はまだ取得できません', true);
       return;
     }
     if (tile.faceDown) {
@@ -82,14 +85,19 @@ export class MatchManager {
       const followedHint = this.hintTargetIds.size === 2 && this.hintTargetIds.has(this.selected.id) && this.hintTargetIds.has(tile.id);
       if (!followedHint) { this.board.discardHintPlan(); this.hintVisitedStateHashes.clear(); }
       this.hintTargetIds.clear(); this.recordHistory();
+      const missionBefore = this.board.currentMissionOrder;
       const first = this.selected; this.selected.setSelected(false);
       this.board.remove(this.selected); this.board.remove(tile); this.selected = null;
       const clearedBottleneck = this.clearedBottleneck(first, tile);
+      const missionMessage = this.missionProgressMessage(missionBefore);
       if (this.revealedFaceDownTile === first || this.revealedFaceDownTile === tile) this.revealedFaceDownTile = null;
       this.moves++; this.ui.updateMoves(this.moves);
       const count = this.board.activeTiles.length; this.ui.updateRemaining(count);
       if (count === 0) { this.discardHint(true); this.invalidateSearch(); clearSavedGame(); if (this.mode === 'tour' && this.stageId) this.completeStage(); else this.ui.showClear(this.moves); }
-      else { this.ui.showMessage(clearedBottleneck ? '銅色の支柱を突破！複数の進路が開きました' : 'マッチ！ クリア可能性を確認しています'); this.persist(); this.checkProgress(clearedBottleneck); }
+      else {
+        this.ui.showMessage(missionMessage ?? (clearedBottleneck ? '銅色の支柱を突破！複数の進路が開きました' : 'マッチ！ クリア可能性を確認しています'));
+        this.persist(); this.checkProgress(Boolean(missionMessage) || clearedBottleneck);
+      }
       return;
     }
     this.board.discardHintPlan(); this.hintTargetIds.clear(); this.hintVisitedStateHashes.clear();
@@ -101,21 +109,34 @@ export class MatchManager {
     const capacity = this.currentTrayCapacity();
     const nextTray = moveTileToTray(states[tile.id], states, this.tray, capacity);
     if (!nextTray) { tile.flash('blocked'); this.ui.showMessage('トレイが満杯です。一致する牌を選んでください', true); return; }
+    const missionBefore = this.board.currentMissionOrder;
     this.processingTap = true; this.recordHistory(); this.board.remove(tile); this.tray = nextTray.map((held) => ({ ...held }));
     const clearedBottleneck = this.clearedBottleneck(tile);
+    const missionMessage = this.missionProgressMessage(missionBefore);
     this.moves++; this.ui.updateMoves(this.moves); this.ui.updateRemaining(this.board.activeTiles.length); this.renderTray();
     if (matchedType) this.ui.showTrayMatch(matchedType); this.processingTap = false;
     if (isTrayClear(this.board.states(), this.tray)) { this.discardHint(true); this.invalidateSearch(); clearSavedGame();
       if (this.mode === 'tour' && this.stageId) this.completeStage(); else this.ui.showClear(this.moves); return; }
     if (isTrayGameOver(this.board.states(), this.tray, capacity)) { this.stuck = true; this.persist(); this.ui.showStuck(this.shuffles !== 0, true); return; }
-    this.ui.showMessage(clearedBottleneck ? '銅色の支柱を突破！複数の進路が開きました' :
-      this.tray.length < capacity ? '牌をトレイへ移しました' : '満杯：一致するFREE TILEで救済できます'); this.persist(); this.checkProgress(clearedBottleneck);
+    this.ui.showMessage(missionMessage ?? (clearedBottleneck ? '銅色の支柱を突破！複数の進路が開きました' :
+      this.tray.length < capacity ? '牌をトレイへ移しました' : '満杯：一致するFREE TILEで救済できます'));
+    this.persist(); this.checkProgress(Boolean(missionMessage) || clearedBottleneck);
   }
 
   private clearedBottleneck(...removedTiles: readonly Tile[]): boolean {
     const bottleneck = removedTiles.find((tile) => tile.bottleneck)?.bottleneck;
     return Boolean(bottleneck && this.board.activeTiles.every((tile) => tile.bottleneck !== bottleneck));
   }
+
+  private missionProgressMessage(previous: number | null): string | null {
+    const current = this.board.currentMissionOrder;
+    this.refreshMissionStatus();
+    if (previous === null || current === previous) return null;
+    if (current === null) return `${this.missionMarker(previous)} ${previous}/3達成！指定順ミッション完了`;
+    return `${this.missionMarker(previous)} ${previous}/3達成！次は${this.missionMarker(current)} ${current}/3です`;
+  }
+
+  private missionMarker(order: number): string { return ['', '🔵', '🟣', '🔴'][order] ?? ''; }
 
   private changePlayRule(rule: PlayRule): void {
     if (rule === this.playRule) return;
@@ -301,7 +322,7 @@ export class MatchManager {
   private undo(): void {
     const previous = this.history.pop(); if (!previous || this.flipping || this.shuffling) return;
     this.discardHint(true); this.invalidateSearch(); this.board.restore(previous.tiles); this.moves = previous.moves; this.tray = previous.tray.map((tile) => ({ ...tile }));
-    this.selected = null; this.stuck = false; this.ui.updateMoves(this.moves); this.ui.updateRemaining(this.board.activeTiles.length); this.ui.hideResult(); this.renderTray(); this.persist(); this.checkProgress();
+    this.selected = null; this.stuck = false; this.ui.updateMoves(this.moves); this.ui.updateRemaining(this.board.activeTiles.length); this.ui.hideResult(); this.refreshMissionStatus(); this.renderTray(); this.persist(); this.checkProgress();
   }
 
   private checkProgress(preserveMessage = false): void {
@@ -352,6 +373,13 @@ export class MatchManager {
   private refreshControls(): void {
     this.ui.setShuffling(this.shuffling, this.board.difficulty, this.hints, this.shuffles);
     if (this.mode === 'tour' && this.stageId) this.ui.updateTourLimits(DIORAMA_STAGES[this.stageId].label, this.hints, this.shuffles);
+    this.refreshMissionStatus();
+  }
+
+  private refreshMissionStatus(): void {
+    const total = this.mode === 'tour' && this.stageId && this.board.tiles.some((tile) => tile.missionOrder !== undefined)
+      ? DIORAMA_STAGES[this.stageId].missionPairIndices?.length ?? 0 : 0;
+    this.ui.setMission(this.board.currentMissionOrder, total);
   }
 
   private renderMode(): void {

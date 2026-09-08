@@ -27,8 +27,8 @@ test('tray saves keep held tiles separate and reject over-capacity data', () => 
   assert.equal(parseSavedGame(JSON.stringify({ ...tray, tray: Array.from({ length: 6 }, (_, id) => ({ ...tiles[id], removed: true })) })), null);
 });
 
-test('Tour saves preserve bottleneck metadata through JSON persistence', () => {
-  const stageId = 'pagoda';
+test('Tour saves preserve challenge metadata through JSON persistence', () => {
+  const stageId = 'spiral';
   const stageIndex = DIORAMA_STAGE_ORDER.indexOf(stageId);
   const stage = DIORAMA_STAGES[stageId];
   const deal = createDioramaDeal(stageId, () => 0.5);
@@ -43,6 +43,8 @@ test('Tour saves preserve bottleneck metadata through JSON persistence', () => {
   const parsed = parseSavedGame(serialized);
   assert.deepEqual(parsed, JSON.parse(serialized));
   assert.equal(parsed.initialTiles.filter((tile) => tile.bottleneck).length, 2);
+  assert.equal(parsed.initialTiles.filter((tile) => tile.missionOrder !== undefined).length, 6);
+  assert.deepEqual([...new Set(parsed.initialTiles.map((tile) => tile.missionOrder).filter(Boolean))], [1, 2, 3]);
 });
 
 test('corrupt, unknown, and inconsistent saves are rejected', () => {
@@ -52,4 +54,5 @@ test('corrupt, unknown, and inconsistent saves are rejected', () => {
   assert.equal(parseSavedGame(JSON.stringify({ ...valid, tiles: tiles.map((tile, index) => ({ ...tile, id: index ? tile.id : 1 })) })), null);
   assert.equal(parseSavedGame(JSON.stringify({ ...valid, history: [{ moves: 1, tiles: [] }] })), null);
   assert.equal(parseSavedGame(JSON.stringify({ ...valid, tiles: tiles.map((tile, index) => index ? tile : { ...tile, bottleneck: 7 }) })), null);
+  assert.equal(parseSavedGame(JSON.stringify({ ...valid, tiles: tiles.map((tile, index) => index ? tile : { ...tile, missionOrder: 0 }) })), null);
 });

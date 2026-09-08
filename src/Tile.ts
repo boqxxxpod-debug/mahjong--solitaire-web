@@ -30,6 +30,7 @@ export class Tile {
     readonly gateKey?: string,
     readonly gateGroup?: string,
     readonly bottleneck?: string,
+    readonly missionOrder?: number,
   ) {
     this.faceDown = faceDown;
     this.originallyFaceDown = faceDown;
@@ -180,6 +181,9 @@ export class Tile {
   private restingAccent(): { color: number; intensity: number } {
     if (this.gateKey) return { color: 0xd4a72c, intensity: 0.18 };
     if (this.bottleneck) return { color: 0xc76532, intensity: 0.22 };
+    if (this.missionOrder === 1) return { color: 0x2da8d8, intensity: 0.28 };
+    if (this.missionOrder === 2) return { color: 0x8c63d9, intensity: 0.28 };
+    if (this.missionOrder === 3) return { color: 0xd95778, intensity: 0.28 };
     return { color: 0x000000, intensity: 0 };
   }
 }

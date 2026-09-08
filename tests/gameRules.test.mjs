@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyzeBoard, analyzeTrayBoard, createCertifiedShuffle, createFaceDownFlags, findSolvableRemovalOrder, generateSolvableTypes, getAvailableActions, getAvailablePairs, getTrayMoves, hasAvailableAction, hasAvailablePair, isClear, isFreeTile, isStuck, isTileUncovered, isTrayGameOver, moveTileToTray, removePair, resetTiles, shuffleActiveTypes, TRAY_CAPACITY } from '../.test-dist/GameRules.js';
+import { analyzeBoard, analyzeTrayBoard, createCertifiedShuffle, createFaceDownFlags, findSolvableRemovalOrder, generateSolvableTypes, getAvailableActions, getAvailablePairs, getCurrentMissionOrder, getTrayMoves, hasAvailableAction, hasAvailablePair, isClear, isFreeTile, isMissionLocked, isStuck, isTileUncovered, isTrayGameOver, moveTileToTray, removePair, resetTiles, shuffleActiveTypes, TRAY_CAPACITY } from '../.test-dist/GameRules.js';
 import { COMPACT_LAYOUT, COMPACT_POSITIONS, TILE_PAIR_FACES, DIFFICULTIES, createSolvableDeal, createSolvableLayout } from '../.test-dist/BoardLayout.js';
 import { getTileFaceLabel, MAHJONG_FACES, parseSuitedFace } from '../.test-dist/TileCatalog.js';
 
@@ -53,6 +53,37 @@ test('face-down tiles use the same free rule but never expose a hint or match', 
 
 test('visible free pair is progress without a reveal', () => {
   assert.equal(getAvailableActions(row(['a', 'b', 'b', 'a']))[0].kind, 'pair');
+});
+
+test('mission pairs unlock only in blue, violet, red order', () => {
+  const tiles = row(['a', 'a', 'b', 'b', 'c', 'c']);
+  tiles.forEach((tile, id) => { tile.x = id * 3; tile.missionOrder = Math.floor(id / 2) + 1; });
+
+  assert.equal(getCurrentMissionOrder(tiles), 1);
+  assert.deepEqual(tiles.map((tile) => isMissionLocked(tile, tiles)), [false, false, true, true, true, true]);
+  assert.deepEqual(getAvailablePairs(tiles).map((pair) => pair.map((tile) => tile.type)), [['a', 'a']]);
+  assert.equal(removePair(tiles[2], tiles[3], tiles), false, 'violet cannot be removed before blue');
+
+  assert.equal(removePair(tiles[0], tiles[1], tiles), true);
+  assert.equal(getCurrentMissionOrder(tiles), 2);
+  assert.ok(tiles.slice(2, 4).every((tile) => isFreeTile(tile, tiles)));
+  assert.ok(tiles.slice(4).every((tile) => isMissionLocked(tile, tiles)));
+
+  assert.equal(removePair(tiles[2], tiles[3], tiles), true);
+  assert.equal(getCurrentMissionOrder(tiles), 3);
+  assert.equal(removePair(tiles[4], tiles[5], tiles), true);
+  assert.equal(getCurrentMissionOrder(tiles), null);
+
+  const trayTiles = row(['a', 'b', 'a', 'b', 'c', 'c']);
+  trayTiles.forEach((tile, id) => { tile.x = id * 3; tile.missionOrder = Math.floor(id / 2) + 1; });
+  let tray = [];
+  assert.equal(moveTileToTray(trayTiles[2], trayTiles, tray), null, 'tray mode also rejects violet before blue');
+  for (const tileId of [0, 1, 2, 3, 4, 5]) {
+    tray = moveTileToTray(trayTiles[tileId], trayTiles, tray);
+    assert.notEqual(tray, null, `tray mission tap ${tileId + 1} is legal in order`);
+  }
+  assert.equal(getCurrentMissionOrder(trayTiles), null);
+  assert.equal(tray.length, 0);
 });
 
 test('tray holds five unmatched tiles, auto-removes a pair, and accepts a full rescue match', () => {
