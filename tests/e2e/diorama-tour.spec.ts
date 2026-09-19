@@ -12,17 +12,17 @@ test('tour selector is accessible, locked, and fits a 390x844 viewport', async (
   await page.screenshot({ path: 'screenshots/tour-selector-390x844.png', fullPage: true });
 });
 
-for (const [stage, hints, shuffles, count] of [
-  ['gate', '∞', '∞', '24'], ['tower', '5', '4', '28'], ['bridge', '4', '3', '32'],
-  ['turtle', '4', '3', '36'], ['pyramid', '3', '2', '40'], ['fortress', '3', '2', '44'],
-  ['pagoda', '2', '1', '50'], ['spiral', '2', '1', '56'], ['dragon', '1', '0', '62'],
-  ['great-wall', '0', '0', '68'],
+for (const [stage, undos, hints, shuffles, count] of [
+  ['gate', '∞', '∞', '∞', '24'], ['tower', '5', '5', '4', '28'], ['bridge', '4', '4', '3', '32'],
+  ['turtle', '4', '4', '3', '36'], ['pyramid', '3', '3', '2', '40'], ['fortress', '3', '3', '2', '44'],
+  ['pagoda', '2', '2', '1', '50'], ['spiral', '2', '2', '1', '56'], ['dragon', '1', '1', '0', '62'],
+  ['great-wall', '0', '0', '0', '68'],
 ] as const) {
   test(`${stage} direct seed is reproducible, fitted, and uses stage limits`, async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 }); await page.goto(`/?mode=tour&stage=${stage}&seed=repeatable`);
     const first = await page.evaluate(() => (window as any).__mahjongGameTest.board.stateHash()); await page.reload();
     expect(await page.evaluate(() => (window as any).__mahjongGameTest.board.stateHash())).toBe(first);
-    await expect(page.locator('#hint')).toHaveText(`HINT ${hints}`); await expect(page.locator('[data-shuffle]').first()).toHaveText(`SHUFFLE ${shuffles}`);
+    await expect(page.locator('#undo')).toHaveText(`UNDO ${undos}`); await expect(page.locator('#hint')).toHaveText(`HINT ${hints}`); await expect(page.locator('[data-shuffle]').first()).toHaveText(`SHUFFLE ${shuffles}`);
     await expect(page.locator('#remaining')).toHaveText(count);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
     await page.screenshot({ path: `screenshots/tour-${stage}-390x844.png`, fullPage: true });
@@ -34,6 +34,88 @@ test('restart and new deal preserve geometry while replaying/changing the deal',
   const initial = await page.evaluate(() => { const b = (window as any).__mahjongGameTest.board; return { hash: b.stateHash(), geometry: b.states().map(({ x, y, z }: any) => [x, y, z]) }; });
   const result = await page.evaluate(async () => { const g = (window as any).__mahjongGameTest; const action = g.board.getHint(g.board.analyzeProgress()); if (action.kind === 'pair') { g.matches.select(action.tiles[0]); g.matches.select(action.tiles[1]); } await new Promise((r) => setTimeout(r, 50)); g.matches.restart(); const restart = g.board.stateHash(); g.matches.newStageDeal(); return { restart, hash: g.board.stateHash(), geometry: g.board.states().map(({ x, y, z }: any) => [x, y, z]) }; });
   expect(result.restart).toBe(initial.hash); expect(result.hash).not.toBe(initial.hash); expect(result.geometry).toEqual(initial.geometry);
+});
+
+test('UNDO and HINT budgets consume independently, persist, block at zero, and reset', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('mahjong-solitaire.play-rule.v1', 'pair');
+    localStorage.setItem('mahjong-solitaire.tour-progress.v1.pair', JSON.stringify({
+      unlocked: ['gate', 'tower', 'bridge', 'turtle', 'pyramid', 'fortress', 'pagoda', 'spiral', 'dragon'],
+      completed: ['gate', 'tower', 'bridge', 'turtle', 'pyramid', 'fortress', 'pagoda', 'spiral'],
+    }));
+  });
+  await page.goto('/?mode=tour&stage=dragon&seed=limited-rescue');
+  const undo = page.locator('#undo'); const hint = page.locator('#hint');
+  await expect(undo).toHaveText('UNDO 1'); await expect(undo).toBeDisabled();
+  await expect(hint).toHaveText('HINT 1');
+  await page.evaluate(() => (window as any).__mahjongGameTest.matches.undo());
+  await expect(undo).toHaveText('UNDO 1');
+  const initialHash = await page.evaluate(() => (window as any).__mahjongGameTest.board.stateHash());
+
+  await hint.click();
+  await expect.poll(() => hint.textContent(), { timeout: 5000 }).toBe('HINT 0');
+  await expect.poll(() => page.evaluate(() => (window as any).__mahjongGameTest.matches.hintTargetIds.size), { timeout: 5000 }).toBeGreaterThan(0);
+  const applied = await page.evaluate(async () => {
+    const game = (window as any).__mahjongGameTest;
+    const targetIds = [...game.matches.hintTargetIds] as number[];
+    targetIds.forEach((id) => game.matches.select(game.board.tiles[id]));
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    return { hash: game.board.stateHash(), history: game.matches.history.length };
+  });
+  expect(applied.hash).not.toBe(initialHash); expect(applied.history).toBeGreaterThan(0);
+  await expect(undo).toBeEnabled();
+
+  await undo.click();
+  await expect.poll(() => page.evaluate(() => (window as any).__mahjongGameTest.board.stateHash())).toBe(initialHash);
+  await expect(undo).toHaveText('UNDO 0'); await expect(undo).toBeDisabled();
+  await expect(hint).toHaveText('HINT 0');
+  await page.goto('/');
+  await expect(undo).toHaveText('UNDO 0'); await expect(undo).toBeDisabled();
+  await expect(hint).toHaveText('HINT 0');
+
+  const blocked = await page.evaluate(async () => {
+    const game = (window as any).__mahjongGameTest;
+    const free = game.board.activeTiles.filter((tile: any) => game.board.isFree(tile));
+    const faceDown = free.find((tile: any) => tile.faceDown);
+    if (faceDown) game.matches.select(faceDown);
+    else {
+      const first = free.find((tile: any, index: number) => free.slice(index + 1).some((other: any) => other.type === tile.type));
+      const second = first && free.find((tile: any) => tile !== first && tile.type === first.type);
+      if (!first || !second) throw new Error('Expected an available action');
+      game.matches.select(first); game.matches.select(second);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    const beforeUndo = game.board.stateHash(); const history = game.matches.history.length;
+    game.matches.undo();
+    return { beforeUndo, afterUndo: game.board.stateHash(), history, afterHistory: game.matches.history.length };
+  });
+  expect(blocked.afterUndo).toBe(blocked.beforeUndo); expect(blocked.afterHistory).toBe(blocked.history);
+
+  await page.evaluate(() => (window as any).__mahjongGameTest.matches.restart());
+  await expect(undo).toHaveText('UNDO 1'); await expect(undo).toBeDisabled();
+  await expect(hint).toHaveText('HINT 1');
+});
+
+test('Tour tray moves use the same UNDO budget', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('mahjong-solitaire.play-rule.v1', 'tray');
+    localStorage.setItem('mahjong-solitaire.tour-progress.v1.tray', JSON.stringify({
+      unlocked: ['gate', 'tower', 'bridge', 'turtle', 'pyramid', 'fortress', 'pagoda', 'spiral', 'dragon'],
+      completed: ['gate', 'tower', 'bridge', 'turtle', 'pyramid', 'fortress', 'pagoda', 'spiral'],
+    }));
+  });
+  await page.goto('/?mode=tour&stage=dragon&seed=limited-tray-undo');
+  const initialHash = await page.evaluate(() => {
+    const game = (window as any).__mahjongGameTest;
+    const tile = game.board.activeTiles.find((candidate: any) => game.board.isFree(candidate));
+    if (!tile) throw new Error('Expected a free tray action');
+    const hash = game.board.stateHash(); game.matches.select(tile); return hash;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 450));
+  const undo = page.locator('#undo'); await expect(undo).toHaveText('UNDO 1'); await expect(undo).toBeEnabled();
+  await undo.click();
+  await expect.poll(() => page.evaluate(() => (window as any).__mahjongGameTest.board.stateHash())).toBe(initialHash);
+  await expect(undo).toHaveText('UNDO 0'); await expect(undo).toBeDisabled();
 });
 
 test('ordered mission status explains violations and follows undo', async ({ page }) => {

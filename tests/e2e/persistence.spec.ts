@@ -15,7 +15,7 @@ for (const difficulty of ['easy', 'normal', 'hard'] as const) {
       await new Promise((resolve) => setTimeout(resolve, 400));
       return {
         hash: game.board.stateHash(), initialHash, difficulty: game.board.difficulty,
-        moves: game.matches.moves, hints: game.matches.hints, shuffles: game.matches.shuffles,
+        moves: game.matches.moves, undos: game.matches.undos, hints: game.matches.hints, shuffles: game.matches.shuffles,
         history: JSON.stringify(game.matches.history), safe: JSON.stringify(game.matches.safe),
       };
     }, difficulty);
@@ -24,7 +24,7 @@ for (const difficulty of ['easy', 'normal', 'hard'] as const) {
       const game = (window as any).__mahjongGameTest;
       return {
         hash: game.board.stateHash(), difficulty: game.board.difficulty,
-        moves: game.matches.moves, hints: game.matches.hints, shuffles: game.matches.shuffles,
+        moves: game.matches.moves, undos: game.matches.undos, hints: game.matches.hints, shuffles: game.matches.shuffles,
         history: JSON.stringify(game.matches.history), safe: JSON.stringify(game.matches.safe),
       };
     });
@@ -70,9 +70,9 @@ test('Tour restores a saved initial deal from before pair-choice face remapping'
   await page.goto('/');
   const restored = await page.evaluate(() => {
     const game = (window as any).__mahjongGameTest;
-    return { stageId: game.matches.stageId, types: game.board.states().map((tile: any) => tile.type) };
+    return { stageId: game.matches.stageId, undos: game.matches.undos, types: game.board.states().map((tile: any) => tile.type) };
   });
-  expect(restored).toEqual({ stageId: 'pyramid', types: legacyTypes });
+  expect(restored).toEqual({ stageId: 'pyramid', undos: 3, types: legacyTypes });
   await expect(page.locator('#remaining')).toHaveText('40');
 });
 

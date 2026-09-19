@@ -3,13 +3,13 @@ import { DIORAMA_STAGE_ORDER, DIORAMA_STAGES, type DioramaStageId } from './Dior
 import { TRAY_CAPACITY, type PlayRule, type TileState } from './GameRules.js';
 
 export const SAVE_KEY = 'mahjong-solitaire.game.v1';
-export const SAVE_SCHEMA_VERSION = 3 as const;
+export const SAVE_SCHEMA_VERSION = 4 as const;
 
 export interface PersistedSnapshot { tiles: TileState[]; moves: number; tray: TileState[] }
 interface SavedBase {
   version: typeof SAVE_SCHEMA_VERSION; savedAt: number; tiles: TileState[]; initialTiles: TileState[];
   playRule: PlayRule; tray: TileState[];
-  moves: number; hints: number | null; shuffles: number | null; history: PersistedSnapshot[];
+  moves: number; undos: number | null; hints: number | null; shuffles: number | null; history: PersistedSnapshot[];
   safe: (PersistedSnapshot & { history: PersistedSnapshot[] }) | null; elapsedMs: number;
 }
 export interface SavedClassicGame extends SavedBase { mode: 'classic'; difficulty: Difficulty }
@@ -87,8 +87,14 @@ export function parseSavedGame(raw: string): SavedGame | null {
     value = { ...value, version: 3, playRule: 'pair', tray: [], history: Array.isArray(value.history) ? value.history.map(addTray) : value.history,
       safe: value.safe === null ? null : addTray(value.safe) };
   }
-  if (!isRecord(value) || value.version !== 3 || (value.mode !== 'classic' && value.mode !== 'tour') || (value.playRule !== 'pair' && value.playRule !== 'tray')) return null;
-  let count: number, limits: { hints: number | null; shuffles: number | null; trayCapacity: number }, positions: readonly { x: number; y: number; z: number }[] | undefined;
+  if (!isRecord(value)) return null;
+  if (value.version === 3) {
+    const undos = value.mode === 'tour' && DIORAMA_STAGE_ORDER.includes(value.stageId as DioramaStageId)
+      ? DIORAMA_STAGES[value.stageId as DioramaStageId].undos : null;
+    value = { ...value, version: 4, undos };
+  }
+  if (!isRecord(value) || value.version !== 4 || (value.mode !== 'classic' && value.mode !== 'tour') || (value.playRule !== 'pair' && value.playRule !== 'tray')) return null;
+  let count: number, limits: { undos: number | null; hints: number | null; shuffles: number | null; trayCapacity: number }, positions: readonly { x: number; y: number; z: number }[] | undefined;
   if (value.mode === 'classic') {
     if (!['easy', 'normal', 'hard'].includes(value.difficulty as string)) return null;
     const difficulty = value.difficulty as Difficulty; count = CLASSIC_COUNTS[difficulty]; limits = DIFFICULTIES[difficulty];
@@ -101,7 +107,7 @@ export function parseSavedGame(raw: string): SavedGame | null {
   const initial = value.initialTiles;
   if (!validTiles(value.tiles, count, initial, positions) || !validTray(value.tray, initial, limits.trayCapacity) || !Number.isFinite(value.savedAt) || (value.savedAt as number) < 0 ||
     !Number.isInteger(value.moves) || (value.moves as number) < 0 || (value.playRule === 'pair' && (value.tray as unknown[]).length !== 0) ||
-    !validCounter(value.hints, limits.hints) || !validCounter(value.shuffles, limits.shuffles) || !Number.isFinite(value.elapsedMs) || (value.elapsedMs as number) < 0 ||
+    !validCounter(value.undos, limits.undos) || !validCounter(value.hints, limits.hints) || !validCounter(value.shuffles, limits.shuffles) || !Number.isFinite(value.elapsedMs) || (value.elapsedMs as number) < 0 ||
     !Array.isArray(value.history) || !value.history.every((entry) => validSnapshot(entry, count, initial, value.playRule as PlayRule, limits.trayCapacity, positions))) return null;
   if (value.safe !== null && (!isRecord(value.safe) || !validSnapshot(value.safe, count, initial, value.playRule as PlayRule, limits.trayCapacity, positions) || !Array.isArray(value.safe.history) ||
     !value.safe.history.every((entry) => validSnapshot(entry, count, initial, value.playRule as PlayRule, limits.trayCapacity, positions)))) return null;
