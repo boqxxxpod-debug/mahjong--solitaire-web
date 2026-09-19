@@ -27,6 +27,8 @@ test('catalog has ten stable stages with a strictly increasing difficulty curve'
     'fortress', 'pagoda', 'spiral', 'dragon', 'great-wall',
   ]);
   assert.deepEqual(DIORAMA_STAGE_ORDER.map((id) => DIORAMA_STAGES[id].positions.length), [24, 28, 32, 36, 40, 44, 50, 56, 62, 68]);
+  assert.deepEqual(DIORAMA_STAGE_ORDER.map((id) => DIORAMA_STAGES[id].undos), [null, 5, 4, 4, 3, 3, 2, 2, 1, 0]);
+  assert.ok(Object.values(DIFFICULTIES).every((difficulty) => difficulty.undos === null), 'Classic keeps unlimited undo');
   assert.deepEqual(DIORAMA_STAGE_ORDER.map((id) => DIORAMA_STAGES[id].hiddenRatio), [0, 0.04, 0.07, 0.10, 0.13, 0.17, 0.20, 0.24, 0.28, 0.32]);
   assert.deepEqual(DIORAMA_STAGE_ORDER.map((id) => DIORAMA_STAGES[id].gateDepth ?? 0), [0, 0, 0, 0, 0, 1, 2, 2, 3, 4]);
   assert.deepEqual(DIORAMA_STAGE_ORDER.map((id) => DIORAMA_STAGES[id].bottleneckPairIndex ?? -1), [-1, -1, -1, -1, -1, -1, 9, 11, 17, 9]);
@@ -44,6 +46,7 @@ test('catalog has ten stable stages with a strictly increasing difficulty curve'
       const previous = DIORAMA_STAGES[DIORAMA_STAGE_ORDER[index - 1]];
       assert.ok(positions.length > previous.positions.length, `${id} adds tiles`);
       assert.ok(stage.hiddenRatio >= previous.hiddenRatio, `${id} never reduces hidden pressure`);
+      assert.ok((stage.undos ?? Infinity) <= (previous.undos ?? Infinity), `${id} never adds undos`);
       assert.ok((stage.hints ?? Infinity) <= (previous.hints ?? Infinity), `${id} never adds hints`);
       assert.ok((stage.shuffles ?? Infinity) <= (previous.shuffles ?? Infinity), `${id} never adds shuffles`);
       assert.ok(stage.trayCapacity <= previous.trayCapacity, `${id} never adds tray capacity`);

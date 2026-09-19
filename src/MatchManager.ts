@@ -14,6 +14,7 @@ export class MatchManager {
   private revealedFaceDownTile: Tile | null = null;
   private flipping = false;
   private moves = 0;
+  private undos: number | null = null;
   private hints: number | null = 3;
   private shuffles: number | null = 2;
   private stuck = false;
@@ -117,7 +118,7 @@ export class MatchManager {
     if (matchedType) this.ui.showTrayMatch(matchedType); this.processingTap = false;
     if (isTrayClear(this.board.states(), this.tray)) { this.discardHint(true); this.invalidateSearch(); clearSavedGame();
       if (this.mode === 'tour' && this.stageId) this.completeStage(); else this.ui.showClear(this.moves); return; }
-    if (isTrayGameOver(this.board.states(), this.tray, capacity)) { this.stuck = true; this.persist(); this.ui.showStuck(this.shuffles !== 0, true); return; }
+    if (isTrayGameOver(this.board.states(), this.tray, capacity)) { this.stuck = true; this.persist(); this.ui.showStuck(this.shuffles !== 0, this.canUndo()); return; }
     this.ui.showMessage(missionMessage ?? (clearedBottleneck ? '銅色の支柱を突破！複数の進路が開きました' :
       this.tray.length < capacity ? '牌をトレイへ移しました' : '満杯：一致するFREE TILEで救済できます'));
     this.persist(); this.checkProgress(Boolean(missionMessage) || clearedBottleneck);
@@ -147,7 +148,10 @@ export class MatchManager {
     if (rule === 'tray') { try { if (!localStorage.getItem('mahjong-solitaire.tray-intro.v1')) { this.ui.showMessage('FREE TILEを難易度別3〜5枠へ。同じ牌2枚で自動消去します'); localStorage.setItem('mahjong-solitaire.tray-intro.v1', '1'); } } catch { /* optional */ } }
   }
 
-  private renderTray(): void { this.ui.renderPlayRule(this.playRule, this.tray.map((tile) => tile.type), this.currentTrayCapacity()); this.ui.setUndoEnabled(this.history.length > 0); }
+  private renderTray(): void {
+    this.ui.renderPlayRule(this.playRule, this.tray.map((tile) => tile.type), this.currentTrayCapacity());
+    this.ui.setUndoEnabled(this.canUndo() && !this.flipping && !this.shuffling, this.undos);
+  }
 
   restart(): void {
     this.discardHint(true); this.invalidateSearch(); this.selected?.setSelected(false); this.selected = null;
@@ -165,7 +169,8 @@ export class MatchManager {
   }
 
   private resetLimits(): void {
-    const config = this.mode === 'tour' && this.stageId ? DIORAMA_STAGES[this.stageId] : DIFFICULTIES[this.board.difficulty]; this.hints = config.hints; this.shuffles = config.shuffles;
+    const config = this.mode === 'tour' && this.stageId ? DIORAMA_STAGES[this.stageId] : DIFFICULTIES[this.board.difficulty];
+    this.undos = config.undos; this.hints = config.hints; this.shuffles = config.shuffles;
     this.hintConsumedStateHash = undefined; this.hintVisitedStateHashes.clear();
     this.refreshControls();
   }
@@ -213,7 +218,7 @@ export class MatchManager {
         }
       }
       if (data.result.status === 'UNSOLVABLE') {
-        this.board.discardHintPlan(); this.stuck = true; this.ui.showStuck(this.shuffles !== 0, Boolean(this.safe)); return;
+        this.board.discardHintPlan(); this.stuck = true; this.ui.showStuck(this.shuffles !== 0, Boolean(this.safe) && this.canUndo()); return;
       }
       this.ui.showMessage('安全な手を確認できませんでした。回数は消費していません', true);
     };
@@ -320,10 +325,14 @@ export class MatchManager {
   }
 
   private undo(): void {
-    const previous = this.history.pop(); if (!previous || this.flipping || this.shuffling) return;
+    if (!this.canUndo() || this.flipping || this.shuffling) return;
+    const previous = this.history.pop()!;
     this.discardHint(true); this.invalidateSearch(); this.board.restore(previous.tiles); this.moves = previous.moves; this.tray = previous.tray.map((tile) => ({ ...tile }));
+    if (this.undos !== null) this.undos--;
     this.selected = null; this.stuck = false; this.ui.updateMoves(this.moves); this.ui.updateRemaining(this.board.activeTiles.length); this.ui.hideResult(); this.refreshMissionStatus(); this.renderTray(); this.persist(); this.checkProgress();
   }
+
+  private canUndo(): boolean { return this.undos !== 0 && this.history.length > 0; }
 
   private checkProgress(preserveMessage = false): void {
     const revision = ++this.revision; this.worker?.terminate();
@@ -349,7 +358,7 @@ export class MatchManager {
       this.persist();
       if (!this.hintTargetIds.size && !preserveMessage) this.ui.showMessage('同じ牌を2枚選んでください');
     } else if (result.status === 'UNSOLVABLE') {
-      this.discardHint(true); this.stuck = true; this.ui.showStuck(this.shuffles !== 0, Boolean(this.safe));
+      this.discardHint(true); this.stuck = true; this.ui.showStuck(this.shuffles !== 0, Boolean(this.safe) && this.canUndo());
     } else if (result.status === 'UNKNOWN' && !this.hintTargetIds.size) {
       this.ui.showMessage('探索上限のため判定を保留しました');
     }
@@ -373,6 +382,7 @@ export class MatchManager {
   private refreshControls(): void {
     this.ui.setShuffling(this.shuffling, this.board.difficulty, this.hints, this.shuffles);
     if (this.mode === 'tour' && this.stageId) this.ui.updateTourLimits(DIORAMA_STAGES[this.stageId].label, this.hints, this.shuffles);
+    this.ui.setUndoEnabled(this.canUndo() && !this.flipping && !this.shuffling, this.undos);
     this.refreshMissionStatus();
   }
 
@@ -457,7 +467,7 @@ export class MatchManager {
       else { this.mode = 'classic'; this.stageId = undefined; this.board.newDeal(game.difficulty); }
       if (this.tray.length > this.currentTrayCapacity()) throw new Error('Saved tray exceeds this level capacity');
       this.board.restoreInitialDeal(game.initialTiles); this.board.restore(game.tiles);
-      this.moves = game.moves; this.hints = game.hints; this.shuffles = game.shuffles;
+      this.moves = game.moves; this.undos = game.undos; this.hints = game.hints; this.shuffles = game.shuffles;
       this.history = this.cloneHistory(game.history);
       this.safe = game.safe ? { tiles: game.safe.tiles.map((tile) => ({ ...tile })), moves: game.safe.moves, tray: game.safe.tray.map((tile) => ({ ...tile })), history: this.cloneHistory(game.safe.history) } : undefined;
       this.selected = null; this.revealedFaceDownTile = this.board.tiles.find((tile) => tile.originallyFaceDown && !tile.faceDown && !tile.removed) ?? null;
@@ -480,7 +490,7 @@ export class MatchManager {
     const base = {
       version: SAVE_SCHEMA_VERSION, savedAt: Date.now(),
       tiles: this.board.states(), initialTiles: this.board.initialStates(), moves: this.moves, playRule: this.playRule, tray: this.tray.map((tile) => ({ ...tile })),
-      hints: this.hints, shuffles: this.shuffles, history: this.cloneHistory(this.history),
+      undos: this.undos, hints: this.hints, shuffles: this.shuffles, history: this.cloneHistory(this.history),
       safe: this.safe ? { tiles: this.safe.tiles.map((tile) => ({ ...tile })), moves: this.safe.moves, tray: this.safe.tray.map((tile) => ({ ...tile })), history: this.cloneHistory(this.safe.history) } : null,
       elapsedMs: this.ui.elapsedTime(),
     };

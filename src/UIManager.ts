@@ -84,7 +84,13 @@ export class UIManager {
       window.setTimeout(() => tile.remove(), 320);
     }
   }
-  setUndoEnabled(enabled: boolean): void { this.undoButton.disabled = !enabled; }
+  setUndoEnabled(enabled: boolean, remaining: number | null): void {
+    const available = enabled && remaining !== 0;
+    this.undoButton.disabled = !available;
+    this.undoButton.textContent = `UNDO ${remaining === null ? '∞' : remaining}`;
+    this.resultUndo.disabled = !available;
+    this.resultUndo.textContent = remaining === null ? '安全な手まで戻る' : `安全な手まで戻る（残り${remaining}）`;
+  }
   onDifficulty(handler: (difficulty: 'easy' | 'normal' | 'hard') => void): void {
     this.difficultyButtons.forEach((button) => button.addEventListener('click', () => handler(button.dataset.difficulty as 'easy' | 'normal' | 'hard')));
   }
@@ -138,7 +144,10 @@ export class UIManager {
   showStuck(canShuffle: boolean, canUndo = true): void {
     this.resultRestart.hidden = false; this.replayButton.hidden = true; this.newDealButton.hidden = true; this.nextStageButton.hidden = true;
     this.resultShuffle.hidden = !canShuffle; this.resultUndo.hidden = !canUndo;
-    this.showResult('STUCK', 'この盤面からクリアできません。安全な手まで戻るか、救済操作を選んでください');
+    const detail = canUndo ? 'この盤面からクリアできません。安全な手まで戻してください' :
+      canShuffle ? 'この盤面からクリアできません。SHUFFLEで安全な配置を作ってください' :
+        '救済回数を使い切りました。RESTARTでもう一度挑戦してください';
+    this.showResult('STUCK', detail);
   }
   reset(count: number): void {
     this.resultRestart.hidden = false; this.replayButton.hidden = true; this.newDealButton.hidden = true; this.nextStageButton.hidden = true;

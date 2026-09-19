@@ -7,6 +7,7 @@ export interface TileLayout extends TilePosition { face: string; }
 export interface DifficultyConfig {
   label: string;
   positions: readonly TilePosition[];
+  undos: number | null;
   hints: number | null;
   shuffles: number | null;
   trayCapacity: number;
@@ -63,9 +64,9 @@ export const HARD_FALLBACK_LAYOUT: readonly TileLayout[] = (() => {
 })();
 
 export const DIFFICULTIES: Record<Difficulty, DifficultyConfig> = {
-  easy: { label: 'EASY', positions: EASY_POSITIONS, hints: null, shuffles: null, trayCapacity: 5, trayChallenge: false },
-  normal: { label: 'NORMAL', positions: NORMAL_POSITIONS, hints: 3, shuffles: 2, trayCapacity: 4, trayChallenge: true },
-  hard: { label: 'HARD', positions: HARD_POSITIONS, hints: 1, shuffles: 0, trayCapacity: 3, trayChallenge: true },
+  easy: { label: 'EASY', positions: EASY_POSITIONS, undos: null, hints: null, shuffles: null, trayCapacity: 5, trayChallenge: false },
+  normal: { label: 'NORMAL', positions: NORMAL_POSITIONS, undos: null, hints: 3, shuffles: 2, trayCapacity: 4, trayChallenge: true },
+  hard: { label: 'HARD', positions: HARD_POSITIONS, undos: null, hints: 1, shuffles: 0, trayCapacity: 3, trayChallenge: true },
 };
 
 function hasUniqueValidPositions(positions: readonly TilePosition[]): boolean {
